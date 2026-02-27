@@ -8,6 +8,10 @@ from google import genai
 
 app = FastAPI()
 
+@app.get("/")
+async def root():
+    return {"status": "Server is running!"}
+
 # ==========================================
 # [ตั้งค่า AI API - ใส่ API Key ของคุณตรงนี้]
 # ==========================================
@@ -347,4 +351,5 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_name: st
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8000)
