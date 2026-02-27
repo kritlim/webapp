@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Party Games Hub</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, sans-serif; text-align: center; margin-top: 30px; background: #f9f9f9; }
+        .container { max-width: 500px; margin: 0 auto; padding: 20px; background: white; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .hidden { display: none; }
+        button { padding: 12px 24px; margin: 10px; border: none; border-radius: 5px; background: #007bff; color: white; cursor: pointer; font-size: 16px; width: 80%; }
+        button:hover { background: #0056b3; }
+        input, select { padding: 12px; margin: 10px; width: 80%; border: 1px solid #ccc; border-radius: 5px; box-sizing: border-box; }
+        ul { list-style-type: none; padding: 0; }
+        li { padding: 10px; background: #eee; margin: 5px; border-radius: 5px; }
+        .dead { color: red; text-decoration: line-through; }
+    </style>
+</head>
+<body>
+
+<div class="container" id="login-screen">
+    <h2>🎮 Party Games Hub</h2>
+    <input type="text" id="player-name" placeholder="ชื่อของคุณ">
+    <input type="text" id="room-id" placeholder="รหัสห้อง">
+    <button onclick="joinRoom()">เข้าห้อง / สร้างห้อง</button>
+</div>
+
+<div class="container hidden" id="lobby-screen">
+    <h2>ห้อง: <span id="display-room-id" style="color:#007bff;"></span></h2>
+    <h3>ผู้เล่นในห้อง:</h3>
+    <ul id="player-list"></ul>
+    
+    <div id="host-controls" class="hidden">
+        <hr>
+        <h3>การตั้งค่า (Host)</h3>
+        <select id="game-select">
+            <option value="mr_white">Mr. White 🕵️</option>
+            <option value="werewolf">Werewolf 🐺</option>
+            <option value="level_game">ระดับใหน ใครน้าา 🧐</option>
+        </select>
+        <br>
+        <select id="mr-white-category">
+            <option value="ผลไม้">ผลไม้</option>
+            <option value="สถานที่">สถานที่</option>
+            <option value="สิ่งของ">สิ่งของ</option>
+            <option value="ภาพยนต์ดัง">ภาพยนต์ดัง</option>
+        </select>
+        <br>
+        <button onclick="startGame()">เริ่มเกม!</button>
+    </div>
+</div>
+
+<div class="container hidden" id="game-screen">
+    <h2 id="game-title">กำลังโหลด...</h2>
+    <div id="game-content"></div>
+</div>
+
+<script>
+    let ws;
+    let myName;
+    let myRoom;
+    let hostName;
+    
+    // Game Variables
+    let countdownInterval;
+    let myRoleWerewolf = "";
+    let alivePlayers = [];
+    let wolvesList = [];
+    let currentPlayersToMatch = [];
+
+    function joinRoom() {
+        myName = document.getElementById('player-name').value;
+        myRoom = document.getElementById('room-id').value;
+        if (!myName || !myRoom) return alert("กรุณาใส่ชื่อและห้อง!");
+
+        // ==========================================
+        // [เปลี่ยน URL ตรงนี้เวลา Deploy จริง]
+        // ตัวอย่าง: wss://your-backend.onrender.com/ws/
+        // ==========================================
+        ws = new WebSocket(`wss://webapp-1moo.onrender.com`);
+
+        ws.onmessage = function(event) {
+            const msg = JSON.parse(event.data);
+            
+            switch(msg.type) {
+                case "update_lobby": updateLobby(msg.room); break;
+                case "game_started": handleGameStart(msg); break;
+                case "start_voting": startVotingUI(msg); break;
+                case "werewolf_night": handleWerewolfNightStart(msg); break;
+                case "vote_result": showVoteResult(msg); break;
+                case "werewolf_morning": handleWerewolfMorning(msg); break;
+                case "level_game_started": renderLevelGameInput(msg); break;
+                case "level_word_refreshed": updateLevelWord(msg.word); break;
+                case "start_level_matching": renderLevelMatching(msg); break;
+                case "level_game_result": renderLevelResult(msg); break;
+            }
+        };
+
+        document.getElementById('login-screen').classList.add('hidden');
+        document.getElementById('lobby-screen').classList.remove('hidden');
+        document.getElementById('display-room-id').innerText = myRoom;
+    }
+
+    function updateLobby(roomData) {
+        const wasHost = (myName === hostName);
+        hostName = roomData.host;
+        const isNowHost = (myName === hostName);
+
+        // [Fix #4] Notify new host while in-game
+        if (!wasHost && isNowHost) {
+            const gameScreen = document.getElementById('game-screen');
+            if (!gameScreen.classList.contains('hidden')) {
+                const notice = document.createElement('div');
+                notice.style.cssText = 'background:#fff3cd;padding:10px;border-radius:5px;margin:10px 0;font-weight:bold;';
+                notice.innerText = '👑 Host คนเก่าออกไปแล้ว คุณกลายเป็น Host! ปุ่มควบคุมจะปรากฏในรอบถัดไป';
+                document.getElementById('game-content').prepend(notice);
+            }
+        }
+
+        const list = document.getElementById('player-list');
+        list.innerHTML = "";
+        roomData.players.forEach(p => {
+            const li = document.createElement('li');
+            li.innerText = p + (p === hostName ? " 👑" : "");
+            list.appendChild(li);
+        });
+
+        if (myName === hostName) {
+            document.getElementById('host-controls').classList.remove('hidden');
+        }
+    }
+
+    function startGame() {
+        const game = document.getElementById('game-select').value;
+        if (game === "mr_white") {
+            const category = document.getElementById('mr-white-category').value;
+            ws.send(JSON.stringify({ action: "start_mr_white", category: category }));
+        } else if (game === "werewolf") {
+            ws.send(JSON.stringify({ action: "start_werewolf" }));
+        } else if (game === "level_game") {
+            ws.send(JSON.stringify({ action: "start_level_game" }));
+        }
+    }
+
+    function resetToLobby() {
+        document.getElementById('game-screen').classList.add('hidden');
+        document.getElementById('lobby-screen').classList.remove('hidden');
+    }
+
+    // --- MR. WHITE & VOTING LOGIC ---
+    function handleGameStart(msg) {
+        document.getElementById('lobby-screen').classList.add('hidden');
+        document.getElementById('game-screen').classList.remove('hidden');
+        
+        if (msg.game === "mr_white") {
+            document.getElementById('game-title').innerText = "เกม: Mr. White 🕵️";
+            const myRole = msg.data.roles[myName];
+            let myWord = myRole === "team_a" ? msg.data.words[0] : (myRole === "team_b" ? msg.data.words[1] : "คุณคือ Mr. White!");
+            
+            document.getElementById('game-content').innerHTML = `
+                <h3>คำของคุณคือ: <br><span style="color:red; font-size:1.5em;">${myWord}</span></h3>
+                <button onclick="readyUp()">Ready (ซ่อนคำศัพท์)</button>
+            `;
+        } else if (msg.game === "werewolf") {
+            document.getElementById('game-title').innerText = "เกม: Werewolf 🐺";
+            myRoleWerewolf = msg.data.roles[myName];
+            alivePlayers = msg.data.alive;
+            wolvesList = msg.data.wolves;
+            renderWerewolfNight();
+        }
+    }
+
+    function readyUp() {
+        let html = `<h3>รอเริ่มการโหวต... ⏳</h3>`;
+        if (myName === hostName) {
+            html += `<button onclick="ws.send(JSON.stringify({action: 'trigger_vote'}))">เริ่มเวลาโหวต 1 นาที (Host)</button>`;
+        }
+        document.getElementById('game-content').innerHTML = html;
+    }
+
+    function startVotingUI(msg) {
+        let timeLeft = msg.time;
+        let voteHtml = `<h3 style="color:red;">เวลาโหวต: <span id="timer">${timeLeft}</span> วินาที</h3><div id="vote-buttons">`;
+
+        msg.alive_players.forEach(p => {
+            if (p !== myName) voteHtml += `<button onclick="castVote('${p}')">โหวต ${p}</button>`;
+        });
+        voteHtml += `</div>`;
+        document.getElementById('game-content').innerHTML = voteHtml;
+
+        countdownInterval = setInterval(() => {
+            timeLeft--;
+            document.getElementById('timer').innerText = timeLeft;
+            if (timeLeft <= 0) {
+                clearInterval(countdownInterval);
+                document.getElementById('vote-buttons').innerHTML = "<p>หมดเวลาโหวต กำลังรอผล...</p>";
+            }
+        }, 1000);
+    }
+
+    function castVote(targetPlayer) {
+        ws.send(JSON.stringify({ action: "vote", target: targetPlayer }));
+        document.getElementById('vote-buttons').innerHTML = `<h4>คุณโหวต ${targetPlayer} ไปแล้ว รอผล...</h4>`;
+    }
+
+    function showVoteResult(msg) {
+        clearInterval(countdownInterval);
+        if (msg.alive) alivePlayers = msg.alive;
+
+        let html = `<h2>${msg.message}</h2>`;
+        if (msg.eliminated.length === 0) {
+            html += `<p>ไม่มีใครตายในรอบนี้!</p>`;
+        } else {
+            html += `<h3>ผู้ที่ถูกคัดออก 💀:</h3><ul style="text-align:left;">`;
+            msg.eliminated.forEach(p => {
+                let teamName = "";
+                if (msg.game === "werewolf") {
+                    teamName = p.team === "werewolf" ? "หมาป่า 🐺" : "ชาวบ้าน 🧑‍🌾";
+                } else {
+                    teamName = p.team === "mr_white" ? "Mr. White 🕵️" : (p.team === "team_a" ? "ทีม A 🔴" : "ทีม B 🔵");
+                }
+                html += `<li><b>${p.name}</b> (${teamName})</li>`;
+            });
+            html += `</ul>`;
+        }
+
+        if (msg.winner) {
+            html += `<hr><h1 style="color:green;">🏆 ผู้ชนะ: ${msg.winner}</h1>`;
+            html += `<button onclick="resetToLobby()">กลับล็อบบี้</button>`;
+        } else if (msg.game === "werewolf") {
+            html += `<hr>`;
+            if (myName === hostName) {
+                html += `<button onclick="startWerewolfNight()">🌙 เริ่มกลางคืนรอบใหม่ (Host)</button>`;
+            } else {
+                html += `<p>รอ Host เริ่มกลางคืน...</p>`;
+            }
+        } else {
+            html += `<hr>`;
+            if (myName === hostName) {
+                html += `<button onclick="ws.send(JSON.stringify({action: 'trigger_vote'}))">🗳️ เริ่มโหวตรอบถัดไป (Host)</button>`;
+            } else {
+                html += `<p>รอ Host เริ่มโหวตรอบถัดไป...</p>`;
+            }
+        }
+        document.getElementById('game-content').innerHTML = html;
+    }
+
+    // --- WEREWOLF LOGIC ---
+    function renderWerewolfNight() {
+        let isWolf = myRoleWerewolf === "werewolf";
+        let html = `<h3>บทบาท: ${isWolf ? "<span style='color:red;'>หมาป่า 🐺</span>" : "<span style='color:blue;'>ชาวบ้าน 🧑‍🌾</span>"}</h3>`;
+        html += `<p>🌙 เลือกเป้าหมาย (ชาวบ้านก็ต้องกดเนียนๆ)</p><div>`;
+        
+        alivePlayers.forEach(p => {
+            if (p !== myName) {
+                let icon = (isWolf && wolvesList.includes(p)) ? " 🐺" : "";
+                html += `<button onclick="sendNightAction('${p}')">${p}${icon}</button>`;
+            }
+        });
+        html += `</div>`;
+        document.getElementById('game-content').innerHTML = html;
+    }
+
+    function sendNightAction(targetPlayer) {
+        ws.send(JSON.stringify({ action: "werewolf_night_action", target: targetPlayer }));
+        document.getElementById('game-content').innerHTML = `<h3>รอผู้เล่นคนอื่นหลับตา... 😴</h3>`;
+    }
+
+    function handleWerewolfNightStart(msg) {
+        alivePlayers = msg.alive;
+        renderWerewolfNight();
+    }
+
+    function startWerewolfNight() {
+        ws.send(JSON.stringify({ action: "start_werewolf_night" }));
+    }
+
+    function handleWerewolfMorning(msg) {
+        alivePlayers = msg.alive;
+        let html = `<h2>☀️ เช้าแล้ว!</h2>`;
+        if (msg.killed) {
+            html += `<h3 style="color:red;">เมื่อคืน ${msg.killed} ถูกฆ่าตาย 🩸</h3>`;
+            if (msg.killed === myName) html += `<p>คุณกลายเป็นวิญญาณ 👻 ห้ามพูด!</p>`;
+        } else {
+            html += `<h3>เมื่อคืนไม่มีใครตาย 🕊️</h3>`;
+        }
+
+        if (msg.winner) {
+            html += `<hr><h1 style="color:green;">ผู้ชนะ: ${msg.winner} 🎉</h1>`;
+            html += `<button onclick="resetToLobby()">กลับล็อบบี้</button>`;
+        } else {
+            html += `<hr><p>ปรึกษากันเพื่อหาตัวหมาป่า!</p>`;
+            if (myName === hostName) {
+               html += `<button onclick="ws.send(JSON.stringify({action: 'trigger_vote'}))">เริ่มโหวต (60 วิ)</button>`;
+            }
+        }
+        document.getElementById('game-content').innerHTML = html;
+    }
+
+    // --- LEVEL GAME LOGIC ---
+    function renderLevelGameInput(msg) {
+        document.getElementById('lobby-screen').classList.add('hidden');
+        document.getElementById('game-screen').classList.remove('hidden');
+        document.getElementById('game-title').innerText = "เกม: ระดับใหน ใครน้าา 🧐";
+        
+        let html = `<h3>หมวดหมู่: <br><span id="level-word" style="color: purple; font-size: 1.5em;">${msg.word}</span></h3>`;
+        if (myName === msg.host) html += `<button onclick="ws.send(JSON.stringify({action: 'refresh_level_word'}))">🔄 เปลี่ยนคำ</button><br><br>`;
+        
+        html += `<p>ให้คะแนนตัวเอง (1-100):</p>`;
+        html += `<input type="number" id="my-level-number" min="1" max="100" placeholder="1-100"><br>`;
+        html += `<button onclick="submitLevelNumber()">Ready</button>`;
+        document.getElementById('game-content').innerHTML = html;
+    }
+
+    function updateLevelWord(word) {
+        const el = document.getElementById('level-word');
+        if(el) el.innerText = word;
+    }
+
+    function submitLevelNumber() {
+        const num = document.getElementById('my-level-number').value;
+        if (num < 1 || num > 100) return alert("ใส่เลข 1-100 เท่านั้น");
+        ws.send(JSON.stringify({ action: "submit_level_number", number: num }));
+        document.getElementById('game-content').innerHTML = `<h3>รอเพื่อนๆ ใส่ตัวเลข... ⏳</h3>`;
+    }
+
+    function renderLevelMatching(msg) {
+        currentPlayersToMatch = msg.players;
+        let html = `<h3>จับคู่ตัวเลข!</h3><p>ตัวเลขที่มี: ${msg.available_numbers.join(", ")}</p><div style="text-align:left; margin:auto; width:fit-content;">`;
+        
+        msg.players.forEach(p => {
+            html += `<label><b>${p}</b>:</label> <select id="match-${p}"><option value="">- เลือก -</option>`;
+            msg.available_numbers.forEach(n => html += `<option value="${n}">${n}</option>`);
+            html += `</select><br><br>`;
+        });
+        html += `</div><button onclick="submitLevelGuesses()">Done (ส่งคำตอบ)</button>`;
+        document.getElementById('game-content').innerHTML = html;
+    }
+
+    function submitLevelGuesses() {
+        let guesses = {};
+        for (let p of currentPlayersToMatch) {
+            let val = document.getElementById(`match-${p}`).value;
+            if (!val) return alert(`เลือกตัวเลขให้ ${p} ด้วยครับ!`);
+            guesses[p] = parseInt(val);
+        }
+        ws.send(JSON.stringify({ action: "submit_level_guesses", guesses: guesses }));
+        document.getElementById('game-content').innerHTML = `<h3>กำลังตรวจคำตอบ... 📝</h3>`;
+    }
+
+    function renderLevelResult(msg) {
+        let html = `<h2>🏆 สรุปผลคะแนน!</h2><ol style="text-align:left; display:inline-block;">`;
+        msg.scores.forEach(s => html += `<li><b>${s.name}</b> ทายถูก ${s.score} คน</li>`);
+        html += `</ol><hr><h3>เฉลยตัวเลขที่แท้จริง:</h3><ul style="text-align:left; display:inline-block; list-style:none; padding:0;">`;
+        
+        for (const [pName, num] of Object.entries(msg.actual_numbers)) {
+            html += `<li>👉 <b>${pName}</b> ใส่เลข <span style="color:red; font-weight:bold;">${num}</span></li>`;
+        }
+        html += `</ul><br><button onclick="resetToLobby()">กลับล็อบบี้</button>`;
+        document.getElementById('game-content').innerHTML = html;
+    }
+</script>
+
+</body>
+</html>
