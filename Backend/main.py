@@ -4,6 +4,7 @@ import math
 import json
 import random
 import asyncio
+import os
 from google import genai
 
 app = FastAPI()
@@ -422,4 +423,5 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_name: st
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
