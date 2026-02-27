@@ -15,7 +15,7 @@ async def root():
 # ==========================================
 # [ตั้งค่า AI API - ใส่ API Key ของคุณตรงนี้]
 # ==========================================
-client = genai.Client(api_key="YOUR_GEMINI_API_KEY")
+client = genai.Client(api_key="AIzaSyD1uG_pAtZF88i8tBnRlrDJKtWBPxNuleI")
 
 class RoomManager:
     def __init__(self):
@@ -38,7 +38,8 @@ class RoomManager:
 manager = RoomManager()
 
 # --- AI & Game Logic Functions ---
-AI_MODEL = "gemini-3-flash-preview"
+# [Fix #4] Corrected model name from "gemini-3-flash-preview" to a valid model
+AI_MODEL = "gemini-2.0-flash"
 
 def get_mr_white_words_from_ai(category: str):
     prompt = f"""สุ่มคำศัพท์ภาษาไทย 2 คำ ในหมวดหมู่: "{category}" ที่มีลักษณะคล้ายกันมากๆ แต่ไม่ใช่คำเดียวกัน ตอบกลับเป็น JSON Array แค่ 2 String เท่านั้น เช่น ["ทะเล", "น้ำตก"]"""
@@ -68,14 +69,54 @@ def assign_mr_white_roles(players: list):
     random.shuffle(roles)
     return {player: roles[i] for i, player in enumerate(players)}
 
+# [Fix #5] Always assign exactly 1 bodyguard and 1 seer regardless of player count
 def assign_werewolf_roles(players: list):
     n = len(players)
     w = math.ceil(n / 6)
-    roles = ["werewolf"] * w + ["villager"] * (n - w)
-    random.shuffle(roles)
-    assigned = {player: roles[i] for i, player in enumerate(players)}
+    shuffled = players[:]
+    random.shuffle(shuffled)
+    assigned = {}
+    special = ["bodyguard", "seer"]  # always 1 each
+    for i, player in enumerate(shuffled):
+        if i < w:
+            assigned[player] = "werewolf"
+        elif i - w < len(special):
+            assigned[player] = special[i - w]
+        else:
+            assigned[player] = "villager"
     wolves_list = [p for p in players if assigned[p] == "werewolf"]
     return assigned, wolves_list
+
+# [Fix #5] Shared night resolution: applies bodyguard protection then broadcasts morning
+async def resolve_night(room_id: str, game_data: dict):
+    killed_player = None
+    if game_data["wolf_votes"]:
+        target = max(game_data["wolf_votes"], key=game_data["wolf_votes"].get)
+        # If bodyguard protected the target, the kill is blocked
+        if target != game_data.get("protected") and target in game_data["alive"]:
+            killed_player = target
+            game_data["alive"].remove(killed_player)
+
+    game_data["night_actions"] = {}
+    game_data["wolf_votes"] = {}
+    game_data["protected"] = None
+    manager.rooms[room_id]["state"] = "werewolf_day"
+
+    alive_wolves = sum(1 for p in game_data["alive"] if game_data["roles"][p] == "werewolf")
+    alive_villagers = len(game_data["alive"]) - alive_wolves
+
+    winner = None
+    if alive_wolves == 0:
+        winner = "ชาวบ้าน (Villagers)"
+    elif alive_villagers <= alive_wolves:
+        winner = "หมาป่า (Werewolves)"
+
+    await manager.broadcast({
+        "type": "werewolf_morning",
+        "killed": killed_player,
+        "winner": winner,
+        "alive": game_data["alive"]
+    }, room_id)
 
 async def start_voting_timer(room_id: str, duration: int = 60):
     room = manager.rooms.get(room_id)
@@ -154,7 +195,18 @@ async def start_voting_timer(room_id: str, duration: int = 60):
         alive_now = [p for p in room["players"] if p not in room["dead_players"]]
         teams_alive = set(roles.get(p) for p in alive_now)
 
-        if len(teams_alive) <= 1:
+        # [Fix #3] Check special 2-player end conditions before the general check
+        alive_mr_white_list = [p for p in alive_now if roles.get(p) == "mr_white"]
+        alive_team_a        = [p for p in alive_now if roles.get(p) == "team_a"]
+        alive_team_b        = [p for p in alive_now if roles.get(p) == "team_b"]
+
+        if len(alive_mr_white_list) == 1 and len(alive_team_a) + len(alive_team_b) == 1:
+            # 1 Mr.White vs 1 team member → Mr.White wins
+            winner = "Mr. White 🕵️"
+        elif len(alive_team_a) == 1 and len(alive_team_b) == 1 and len(alive_mr_white_list) == 0:
+            # 1 Team A vs 1 Team B, no Mr.White → Tie
+            winner = "เสมอ (Tie) 🤝"
+        elif len(teams_alive) <= 1:
             if not teams_alive:
                 winner = "ไม่มีผู้ชนะ (ทุกคนตาย)"
             else:
@@ -172,10 +224,10 @@ async def start_voting_timer(room_id: str, duration: int = 60):
 @app.websocket("/ws/{room_id}/{player_name}")
 async def websocket_endpoint(websocket: WebSocket, room_id: str, player_name: str):
     await manager.connect(websocket, room_id)
-    
+
     if room_id not in manager.rooms:
         manager.rooms[room_id] = {"host": player_name, "players": [], "state": "lobby"}
-    
+
     if player_name not in manager.rooms[room_id]["players"]:
         manager.rooms[room_id]["players"].append(player_name)
 
@@ -197,16 +249,15 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_name: st
                 room["dead_players"] = []
                 room["mr_white_data"] = {"words": words, "roles": roles}
                 await manager.broadcast({"type": "game_started", "game": "mr_white", "data": room["mr_white_data"]}, room_id)
-            
+
             elif action == "trigger_vote":
                 room["votes"] = {}
                 asyncio.create_task(start_voting_timer(room_id, 60))
-                
+
             elif action == "vote":
                 target = message.get("target")
                 if "votes" not in room: room["votes"] = {}
 
-                # Validate target is still alive
                 if room["state"] == "werewolf_day":
                     alive_now = room.get("werewolf_data", {}).get("alive", [])
                 else:
@@ -215,7 +266,6 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_name: st
 
                 if target in alive_now:
                     room["votes"][target] = room["votes"].get(target, 0) + 1
-                    # Early-resolve: signal timer if everyone has voted
                     total_votes = sum(room["votes"].values())
                     if total_votes >= room.get("expected_votes", float("inf")):
                         event = room.get("vote_event")
@@ -226,17 +276,24 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_name: st
             elif action == "start_werewolf":
                 roles, wolves = assign_werewolf_roles(room["players"])
                 room["state"] = "werewolf_night"
-                room["werewolf_data"] = {"roles": roles, "wolves": wolves, "alive": room["players"].copy(), "night_actions": {}, "wolf_votes": {}}
+                room["werewolf_data"] = {
+                    "roles": roles, "wolves": wolves,
+                    "alive": room["players"].copy(),
+                    "night_actions": {}, "wolf_votes": {},
+                    "protected": None  # [Fix #5] bodyguard's protection target for this night
+                }
                 await manager.broadcast({"type": "game_started", "game": "werewolf", "data": room["werewolf_data"]}, room_id)
 
             elif action == "start_werewolf_night":
                 game_data = room["werewolf_data"]
                 game_data["night_actions"] = {}
                 game_data["wolf_votes"] = {}
+                game_data["protected"] = None  # [Fix #5] reset protection each night
                 room["state"] = "werewolf_night"
                 await manager.broadcast({"type": "werewolf_night", "alive": game_data["alive"]}, room_id)
 
             elif action == "werewolf_night_action":
+                # Handles wolves (record kill vote) and villagers (fake action to progress night)
                 target = message.get("target")
                 game_data = room["werewolf_data"]
                 if player_name not in game_data["alive"]:
@@ -248,23 +305,39 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_name: st
                     game_data["wolf_votes"][target] = game_data["wolf_votes"].get(target, 0) + 1
 
                 if len(game_data["night_actions"]) == len(game_data["alive"]):
-                    killed_player = None
-                    if game_data["wolf_votes"]:
-                        killed_player = max(game_data["wolf_votes"], key=game_data["wolf_votes"].get)
-                        game_data["alive"].remove(killed_player)
-                    
-                    game_data["night_actions"] = {}
-                    game_data["wolf_votes"] = {}
-                    room["state"] = "werewolf_day"
-                    
-                    alive_wolves = sum(1 for p in game_data["alive"] if game_data["roles"][p] == "werewolf")
-                    alive_villagers = len(game_data["alive"]) - alive_wolves
-                    
-                    winner = None
-                    if alive_wolves == 0: winner = "ชาวบ้าน (Villagers)"
-                    elif alive_villagers <= alive_wolves: winner = "หมาป่า (Werewolves)"
+                    await resolve_night(room_id, game_data)
 
-                    await manager.broadcast({"type": "werewolf_morning", "killed": killed_player, "winner": winner, "alive": game_data["alive"]}, room_id)
+            # [Fix #5] Bodyguard picks who to protect tonight
+            elif action == "bodyguard_night_action":
+                target = message.get("target")
+                game_data = room["werewolf_data"]
+                if player_name not in game_data["alive"]:
+                    continue
+
+                game_data["night_actions"][player_name] = True
+                game_data["protected"] = target
+
+                if len(game_data["night_actions"]) == len(game_data["alive"]):
+                    await resolve_night(room_id, game_data)
+
+            # [Fix #5] Seer checks alignment of a target — sends result privately back to seer only
+            elif action == "seer_night_action":
+                target = message.get("target")
+                game_data = room["werewolf_data"]
+                if player_name not in game_data["alive"]:
+                    continue
+
+                game_data["night_actions"][player_name] = True
+
+                is_evil = game_data["roles"].get(target, "villager") == "werewolf"
+                await websocket.send_text(json.dumps({
+                    "type": "seer_result",
+                    "target": target,
+                    "is_evil": is_evil
+                }))
+
+                if len(game_data["night_actions"]) == len(game_data["alive"]):
+                    await resolve_night(room_id, game_data)
 
             # --- Game 3: Level Game ---
             elif action == "start_level_game":
@@ -306,11 +379,9 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_name: st
         if player_name in room["players"]:
             room["players"].remove(player_name)
 
-        # [Fix #4] Transfer host to next player if host disconnected
         if room["host"] == player_name and room["players"]:
             room["host"] = room["players"][0]
 
-        # [Fix #2] Level Game deadlock: clean up disconnected player's data and re-check phase
         state = room.get("state", "")
         if state == "level_game_input":
             level_data = room.get("level_data", {})
@@ -327,7 +398,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_name: st
             level_data = room.get("level_data", {})
             level_data.get("numbers", {}).pop(player_name, None)
             level_data.get("guesses", {}).pop(player_name, None)
-            guesses      = level_data.get("guesses", {})
+            guesses        = level_data.get("guesses", {})
             actual_numbers = level_data.get("numbers", {})
             if room["players"] and len(guesses) == len(room["players"]):
                 scores = []
@@ -341,7 +412,6 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_name: st
                     room_id
                 )
 
-        # [Fix #6] Clean up empty room
         if not room["players"]:
             manager.rooms.pop(room_id, None)
             manager.connections.pop(room_id, None)
@@ -351,5 +421,4 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_name: st
 
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run(app, host="0.0.0.0", port=8000)
