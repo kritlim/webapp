@@ -1,13 +1,22 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import Response
+from fastapi.middleware.cors import CORSMiddleware
 from typing import Dict, List
 import math
 import json
 import random
 import asyncio
-import os
 from google import genai
+from google.genai import types
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
 
 @app.get("/")
 async def root():
@@ -16,7 +25,7 @@ async def root():
 # ==========================================
 # [ตั้งค่า AI API - ใส่ API Key ของคุณตรงนี้]
 # ==========================================
-client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+client = genai.Client(api_key="AIzaSyBn6hXo3UDeccZ9LHOBDprvEq-IyPRJ7SQ")
 
 class RoomManager:
     def __init__(self):
@@ -38,9 +47,36 @@ class RoomManager:
 
 manager = RoomManager()
 
+# Cache for generated character images (playerName -> bytes)
+character_cache: Dict[str, bytes] = {}
+
+@app.get("/character/{player_name}")
+async def get_character_image(player_name: str):
+    if player_name in character_cache:
+        return Response(content=character_cache[player_name], media_type="image/png")
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.0-flash-exp-image-generation",
+            contents=(
+                f"A cute pixel art 8-bit RPG character sprite for a player named '{player_name}'. "
+                "32x32 pixel art style, colorful, unique design, looks like a classic SNES/NES game character. "
+                "Solid dark purple background (#0d0218). No text in the image."
+            ),
+            config=types.GenerateContentConfig(
+                response_modalities=["TEXT", "IMAGE"]
+            )
+        )
+        for part in response.candidates[0].content.parts:
+            if part.inline_data is not None:
+                image_bytes = part.inline_data.data
+                character_cache[player_name] = image_bytes
+                return Response(content=image_bytes, media_type="image/png")
+    except Exception:
+        pass
+    return Response(status_code=404)
+
 # --- AI & Game Logic Functions ---
-# [Fix #4] Corrected model name from "gemini-3-flash-preview" to a valid model
-AI_MODEL = "gemini-2.0-flash"
+AI_MODEL = "gemini-2.5-flash"
 
 def get_mr_white_words_from_ai(category: str):
     prompt = f"""สุ่มคำศัพท์ภาษาไทย 2 คำ ในหมวดหมู่: "{category}" ที่มีลักษณะคล้ายกันมากๆ แต่ไม่ใช่คำเดียวกัน ตอบกลับเป็น JSON Array แค่ 2 String เท่านั้น เช่น ["ทะเล", "น้ำตก"]"""
@@ -423,5 +459,3 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_name: st
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
-
-
