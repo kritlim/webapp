@@ -96,7 +96,7 @@ def get_level_game_word():
     prompt = """สุ่มคำศัพท์ภาษาไทย 1 คำ หรือ 1 วลีสั้นๆ ที่ใช้บอกลักษณะ นิสัย เช่น สวย, สายปาร์ตี้, ขี้เซา ตอบกลับมาแค่คำศัพท์นั้นคำเดียวเดี่ยวๆ"""
     try:
         response = client.models.generate_content(model=AI_MODEL, contents=prompt, config=types.GenerateContentConfig(
-        thinking_config=types.ThinkingConfig(thinking_level="low"))
+        thinking_config=types.ThinkingConfig(thinking_level="low")))
         return response.text.strip()
     except Exception:
         return "สายเปย์"
@@ -463,5 +463,6 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_name: st
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
