@@ -83,8 +83,7 @@ def get_mr_white_words_from_ai(category: str):
     prompt = f"""สุ่มคำศัพท์ภาษาไทย 2 คำ ในหมวดหมู่: "{category}" ที่มีลักษณะคล้ายกันมากๆ แต่ไม่ใช่คำเดียวกัน ตอบกลับเป็น JSON Array แค่ 2 String เท่านั้น เช่น ["ทะเล", "น้ำตก"]"""
     
     try:
-        response = client.models.generate_content(model=AI_MODEL, contents=prompt, config=types.GenerateContentConfig(
-        thinking_config=types.ThinkingConfig(thinking_level="low")))
+        response = client.models.generate_content(model=AI_MODEL, contents=prompt)
         raw_text = response.text.strip().replace('```json', '').replace('```', '')
         words = json.loads(raw_text)
         random.shuffle(words)
@@ -95,8 +94,7 @@ def get_mr_white_words_from_ai(category: str):
 def get_level_game_word():
     prompt = """สุ่มคำศัพท์ภาษาไทย 1 คำ หรือ 1 วลีสั้นๆ ที่ใช้บอกลักษณะ นิสัย เช่น สวย, สายปาร์ตี้, ขี้เซา ตอบกลับมาแค่คำศัพท์นั้นคำเดียวเดี่ยวๆ"""
     try:
-        response = client.models.generate_content(model=AI_MODEL, contents=prompt, config=types.GenerateContentConfig(
-        thinking_config=types.ThinkingConfig(thinking_level="low")))
+        response = client.models.generate_content(model=AI_MODEL, contents=prompt)
         return response.text.strip()
     except Exception:
         return "สายเปย์"
@@ -463,6 +461,7 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_name: st
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
 
 
