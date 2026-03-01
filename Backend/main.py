@@ -6,6 +6,7 @@ import math
 import json
 import random
 import asyncio
+import os
 from google import genai
 from google.genai import types
 
@@ -25,7 +26,7 @@ async def root():
 # ==========================================
 # [ตั้งค่า AI API - ใส่ API Key ของคุณตรงนี้]
 # ==========================================
-client = genai.Client(api_key="AIzaSyBn6hXo3UDeccZ9LHOBDprvEq-IyPRJ7SQ")
+client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
 class RoomManager:
     def __init__(self):
