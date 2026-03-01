@@ -57,7 +57,7 @@ async def get_character_image(player_name: str):
         return Response(content=character_cache[player_name], media_type="image/png")
     try:
         response = client.models.generate_content(
-            model="gemini-2.0-flash-exp-image-generation",
+            model="gemini-2.5-flash-image",
             contents=(
                 f"A cute pixel art 8-bit RPG character sprite for a player named '{player_name}'. "
                 "32x32 pixel art style, colorful, unique design, looks like a classic SNES/NES game character. "
@@ -77,12 +77,13 @@ async def get_character_image(player_name: str):
     return Response(status_code=404)
 
 # --- AI & Game Logic Functions ---
-AI_MODEL = "gemini-2.5-flash"
+AI_MODEL = "gemini-3-flash-preview"
 
 def get_mr_white_words_from_ai(category: str):
     prompt = f"""สุ่มคำศัพท์ภาษาไทย 2 คำ ในหมวดหมู่: "{category}" ที่มีลักษณะคล้ายกันมากๆ แต่ไม่ใช่คำเดียวกัน ตอบกลับเป็น JSON Array แค่ 2 String เท่านั้น เช่น ["ทะเล", "น้ำตก"]"""
     try:
-        response = client.models.generate_content(model=AI_MODEL, contents=prompt)
+        response = client.models.generate_content(model=AI_MODEL, contents=prompt, config=types.GenerateContentConfig(
+        thinking_config=types.ThinkingConfig(thinking_level="low"))
         raw_text = response.text.strip().replace('```json', '').replace('```', '')
         words = json.loads(raw_text)
         random.shuffle(words)
@@ -93,7 +94,8 @@ def get_mr_white_words_from_ai(category: str):
 def get_level_game_word():
     prompt = """สุ่มคำศัพท์ภาษาไทย 1 คำ หรือ 1 วลีสั้นๆ ที่ใช้บอกลักษณะ นิสัย เช่น สวย, สายปาร์ตี้, ขี้เซา ตอบกลับมาแค่คำศัพท์นั้นคำเดียวเดี่ยวๆ"""
     try:
-        response = client.models.generate_content(model=AI_MODEL, contents=prompt)
+        response = client.models.generate_content(model=AI_MODEL, contents=prompt, config=types.GenerateContentConfig(
+        thinking_config=types.ThinkingConfig(thinking_level="low"))
         return response.text.strip()
     except Exception:
         return "สายเปย์"
