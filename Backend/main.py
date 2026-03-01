@@ -81,6 +81,7 @@ AI_MODEL = "gemini-3-flash-preview"
 
 def get_mr_white_words_from_ai(category: str):
     prompt = f"""สุ่มคำศัพท์ภาษาไทย 2 คำ ในหมวดหมู่: "{category}" ที่มีลักษณะคล้ายกันมากๆ แต่ไม่ใช่คำเดียวกัน ตอบกลับเป็น JSON Array แค่ 2 String เท่านั้น เช่น ["ทะเล", "น้ำตก"]"""
+    
     try:
         response = client.models.generate_content(model=AI_MODEL, contents=prompt, config=types.GenerateContentConfig(
         thinking_config=types.ThinkingConfig(thinking_level="low")))
@@ -462,4 +463,5 @@ async def websocket_endpoint(websocket: WebSocket, room_id: str, player_name: st
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 
