@@ -50,6 +50,8 @@ window.DV = window.DV || {};
       id: "koromon", name: "KOROMON", stage: "intraining", sprite: "koromon",
       power: 2, evolveAfter: 150,
       evolutions: [
+        { to: "veemon", text: "AGI is its highest stat & Care Mistakes ≤ 5",
+          cond: function (m, s) { return m.cm <= 5 && s.agi > s.str && s.agi > s.int; } },
         { to: "agumon", text: "Care Mistakes ≤ 4", cond: function (m) { return m.cm <= 4; } },
         { to: "gabumon", text: "5+ Care Mistakes (softer upbringing)" },
       ],
@@ -119,6 +121,36 @@ window.DV = window.DV || {};
       lifespan: 1500,
       evolutions: [],
     },
+
+    // ---- Veemon line (02 / D-3), branched from Koromon via AGI ----
+    veemon: {
+      id: "veemon", name: "VEEMON", stage: "rookie", sprite: "veemon",
+      power: 5, evolveAfter: 260,
+      evolutions: [
+        { to: "exveemon", text: "Care Mistakes ≤ 6, Train ≥ 3, not underweight",
+          cond: function (m) { return m.cm <= 6 && m.train >= 3 && !m.underweight; } },
+        { to: "numemon", text: "Otherwise (poor care)" },
+      ],
+    },
+    exveemon: {
+      id: "exveemon", name: "EXVEEMON", stage: "champion", sprite: "exveemon",
+      power: 13, evolveAfter: 360,
+      evolutions: [
+        { to: "aerovdramon", text: "Care Mistakes ≤ 8, Train ≥ 8, Win rate ≥ 40%",
+          cond: function (m) { return m.cm <= 8 && m.train >= 8 && m.wr >= 0.4; } },
+        { to: "skullgreymon", text: "Poor care or a weak record" },
+      ],
+    },
+    aerovdramon: {
+      id: "aerovdramon", name: "AEROVDRAMON", stage: "ultimate", sprite: "aerovdramon",
+      power: 24, evolveAfter: 480,
+      evolutions: [{ to: "ulforce", text: "Survive as an Ultimate" }],
+    },
+    ulforce: {
+      id: "ulforce", name: "ULFORCEVMON", stage: "mega", sprite: "ulforce",
+      power: 40, evolveAfter: null, lifespan: 1500,
+      evolutions: [],
+    },
   };
 
   // Attach a generic next() driven by the evolutions data.
@@ -147,6 +179,10 @@ window.DV = window.DV || {};
     metalgreymon: ["novablst", "gigablst", "guard"],
     skullgreymon: ["darkshot", "bite"],
     wargreymon: ["novablst", "terra", "guard"],
+    veemon: ["vheadbt", "scratch"],
+    exveemon: ["bite", "veelaser", "guard"],
+    aerovdramon: ["wingcut", "vnova", "guard"],
+    ulforce: ["ulray", "wingcut", "guard"],
   };
   Object.keys(SKILLS_BY_SPECIES).forEach(function (id) {
     if (SPECIES[id]) SPECIES[id].skills = SKILLS_BY_SPECIES[id];
@@ -161,12 +197,19 @@ window.DV = window.DV || {};
     { id: "skullgreymon", name: "SKULLGREYMON", sprite: "skullgreymon", power: 28 },
     { id: "metalgreymon", name: "METALGREYMON", sprite: "metalgreymon", power: 24 },
     { id: "wargreymon", name: "WARGREYMON", sprite: "wargreymon", power: 42 },
+    { id: "veemon", name: "VEEMON", sprite: "veemon", power: 5 },
+    { id: "exveemon", name: "EXVEEMON", sprite: "exveemon", power: 13 },
+    { id: "aerovdramon", name: "AEROVDRAMON", sprite: "aerovdramon", power: 24 },
+    { id: "ulforce", name: "ULFORCEVMON", sprite: "ulforce", power: 40 },
   ];
 
   // Display order for the Field Guide (stage order, branches grouped).
   var GUIDE_ORDER = [
-    "egg", "botamon", "koromon", "agumon", "gabumon",
-    "greymon", "garurumon", "numemon", "metalgreymon", "skullgreymon", "wargreymon",
+    "egg", "botamon", "koromon",
+    "agumon", "gabumon", "veemon",
+    "greymon", "garurumon", "exveemon", "numemon",
+    "metalgreymon", "aerovdramon", "skullgreymon",
+    "wargreymon", "ulforce",
   ];
 
   DV.digimon = {

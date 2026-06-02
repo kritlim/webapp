@@ -26,6 +26,12 @@ window.DV = window.DV || {};
     gigablst: { name: "GIGABLST", kind: "phys", power: 22, acc: 85 },   // MetalGreymon: Giga Blaster
     darkshot: { name: "DARKSHOT", kind: "mag",  power: 20, acc: 82 },   // SkullGreymon: Dark Shot
     terra:    { name: "TERRAFRC", kind: "phys", power: 30, acc: 85 },   // WarGreymon: Terra Force
+    // Veemon line
+    vheadbt:  { name: "VHEADBT",  kind: "phys", power: 6,  acc: 92 },   // Veemon: Vee Headbutt
+    veelaser: { name: "VEELASER", kind: "mag",  power: 13, acc: 88 },   // ExVeemon: Vee-Laser
+    wingcut:  { name: "WINGCUT",  kind: "phys", power: 11, acc: 92 },
+    vnova:    { name: "VNOVA",    kind: "phys", power: 22, acc: 86 },    // AeroVeedramon: V-Wing Blade
+    ulray:    { name: "ULFORCE",  kind: "phys", power: 32, acc: 90 },    // UlforceVeedramon: Ray of Victory
   };
 
   // attach id onto each entry for convenience
