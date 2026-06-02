@@ -49,8 +49,35 @@
     G.on("sick", function () { if (booted) A.sick(); });
   }
 
-  function openOverlay(type, data) { ui.overlay = { type: type, t: 0, data: data || {} }; }
+  function openOverlay(type, data) { floaters.length = 0; ui.overlay = { type: type, t: 0, data: data || {} }; }
   function flash(msg) { ui.message = msg; ui.messageT = 1.3; A.move(); }
+
+  /* -------- floating stat popups (e.g. "STR +1", "WT -2") -------- */
+  var floaters = [];
+  function spawnFloats(changes, x, y) {
+    if (!changes) return;
+    for (var i = 0; i < changes.length; i++) {
+      var d = changes[i][1];
+      var txt = changes[i][0] + " " + (d > 0 ? "+" : "") + d;
+      var fx = Math.max(0, Math.min(x, R.W - R.textWidth(txt)));
+      floaters.push({ text: txt, x: fx, y: y - i * 7, t: 0, life: 1.2 });
+    }
+  }
+  function updateFloaters(dt) {
+    for (var i = floaters.length - 1; i >= 0; i--) {
+      var f = floaters[i];
+      f.t += dt; f.y -= 12 * dt;            // drift upward
+      if (f.t >= f.life) floaters.splice(i, 1);
+    }
+  }
+  function drawFloaters() {
+    for (var i = 0; i < floaters.length; i++) {
+      var f = floaters[i];
+      // blink out over the last third of its life
+      if (f.t > f.life * 0.66 && Math.floor(f.t * 12) % 2 === 0) continue;
+      R.text(f.text, Math.round(f.x), Math.round(f.y));
+    }
+  }
 
   /* ==================================================================
      INPUT
@@ -118,8 +145,8 @@
     else if (btn === "B") {
       var res = ui.feed.sel === 0 ? G.feedFood() : G.feedProtein();
       if (!res.ok) { A.refuse(); flash(res.reason === "asleep" ? "ZZZ..." : "NO"); return; }
-      if (res.full) { A.refuse(); flash("FULL!"); }
-      else { A.eat(); ui.feed.eating = true; ui.feed.eatT = 0; }
+      if (res.full) { A.refuse(); flash("FULL!"); spawnFloats(res.changes, 8, 13); }
+      else { A.eat(); ui.feed.eating = true; ui.feed.eatT = 0; spawnFloats(res.changes, 8, 13); }
     } else if (btn === "C") { ui.mode = "idle"; A.back(); }
   }
 
@@ -130,7 +157,8 @@
       // success when the marker is near the centre of the bar
       var center = 0.5, dist = Math.abs(t.marker - center);
       var success = dist < 0.13;
-      G.train(success);
+      var res = G.train(success);
+      spawnFloats(res.changes, 10, 12);
       t.result = success; t.phase = "result"; t.resultT = 0;
       if (success) A.happy(); else A.refuse();
     }
@@ -198,6 +226,7 @@
     if (ui.messageT > 0) ui.messageT -= dt;
 
     if (ui.overlay) { updateOverlay(dt); return; }
+    updateFloaters(dt);
 
     var st = G.getState();
     // roaming pet
@@ -252,7 +281,8 @@
       }
       if (b.fightT >= total) {
         b.phase = "result";
-        G.recordBattle(b.result.win);
+        var rb = G.recordBattle(b.result.win);
+        spawnFloats(rb.changes, 8, 13);
         if (b.result.win) A.win(); else A.lose();
       }
     }
@@ -280,6 +310,7 @@
       case "status": drawStatus(); break;
       case "settings": drawSettings(); break;
     }
+    drawFloaters();
     drawMessage();
   }
 
