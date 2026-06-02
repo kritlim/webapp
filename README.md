@@ -31,6 +31,11 @@ npm run dev        # serves on http://localhost:3000
 The eight on-screen icons are the classic Digivice menu:
 **Feed · Train · Battle · Status · Clean · Light · Heal · Settings.**
 
+Tap **📖 Field Guide** (bottom-right) any time to open the in-page wiki — the
+full evolution chart with the exact conditions for every branch. It's generated
+from the same data the game uses, so it can never go out of sync. The game keeps
+running behind it.
+
 ## The playing system
 
 Just like the real device, this is a real-time care sim:

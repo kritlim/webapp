@@ -580,14 +580,16 @@
 
   // ---- keyboard ----
   var cKeyDown = 0;
+  function wikiOpen() { return DV.wiki && DV.wiki.isOpen(); }
   window.addEventListener("keydown", function (e) {
-    if (e.repeat) return;
+    if (e.repeat || wikiOpen()) return;   // let the Field Guide handle keys while open
     var k = e.key.toLowerCase();
     if (k === "arrowleft" || k === "a") { e.preventDefault(); press("A"); }
     else if (k === "enter" || k === " " || k === "b" || k === "arrowup") { e.preventDefault(); press("B"); }
     else if (k === "escape" || k === "c") { cKeyDown = performance.now(); }
   });
   window.addEventListener("keyup", function (e) {
+    if (wikiOpen()) return;
     var k = e.key.toLowerCase();
     if (k === "escape" || k === "c") {
       var held = performance.now() - cKeyDown;
