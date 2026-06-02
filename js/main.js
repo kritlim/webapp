@@ -34,7 +34,7 @@
     settings: { sel: 0, confirm: false },
   };
 
-  var now = 0, alertT = 0, booted = false;
+  var now = 0, alertT = 0, booted = false, floaters = [];
 
   /* -------------------- boot -------------------- */
   if (!G.load()) G.start();
@@ -49,11 +49,10 @@
     G.on("sick", function () { if (booted) A.sick(); });
   }
 
-  function openOverlay(type, data) { floaters.length = 0; ui.overlay = { type: type, t: 0, data: data || {} }; }
+  function openOverlay(type, data) { if (floaters) floaters.length = 0; ui.overlay = { type: type, t: 0, data: data || {} }; }
   function flash(msg) { ui.message = msg; ui.messageT = 1.3; A.move(); }
 
   /* -------- floating stat popups (e.g. "STR +1", "WT -2") -------- */
-  var floaters = [];
   function spawnFloats(changes, x, y) {
     if (!changes) return;
     for (var i = 0; i < changes.length; i++) {
@@ -579,8 +578,9 @@
     if (!now) now = ts;
     var dt = Math.min((ts - now) / 1000, 0.1); // clamp big gaps (tab throttle)
     now = ts;                                  // `now` (ms) doubles as the animation clock
-    update(dt);
-    draw();
+    // A thrown error must never brick the whole game loop / freeze input.
+    try { update(dt); draw(); }
+    catch (err) { if (window.console) console.error("Digivice frame error:", err); }
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
