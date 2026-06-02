@@ -57,10 +57,12 @@
     if (!changes) return;
     for (var i = 0; i < changes.length; i++) {
       var d = changes[i][1];
-      var txt = changes[i][0] + " " + (d > 0 ? "+" : "") + d;
-      var fx = Math.max(0, Math.min(x, R.W - R.textWidth(txt)));
-      floaters.push({ text: txt, x: fx, y: y - i * 7, t: 0, life: 1.2 });
+      spawnFloat(changes[i][0] + " " + (d > 0 ? "+" : "") + d, x, y - i * 7, 1.2);
     }
+  }
+  function spawnFloat(text, x, y, life) {
+    var fx = Math.max(0, Math.min(x, R.W - R.textWidth(text)));
+    floaters.push({ text: text, x: fx, y: y, t: 0, life: life || 0.9 });
   }
   function updateFloaters(dt) {
     for (var i = floaters.length - 1; i >= 0; i--) {
@@ -107,7 +109,7 @@
       case "feed": ui.mode = "feed"; ui.feed = { sel: 0, eatT: 0, eating: false }; break;
       case "train":
         if (st.speciesId === "egg") return flash("NOT YET");
-        ui.mode = "train"; ui.train = { phase: "aim", marker: 0, dir: 1, result: null, resultT: 0 };
+        ui.mode = "train"; ui.train = { phase: "pick", statSel: 0, marker: 0, dir: 1, result: null, resultT: 0 };
         break;
       case "battle":
         if (st.speciesId === "egg") return flash("NOT YET");
@@ -149,22 +151,31 @@
     } else if (btn === "C") { ui.mode = "idle"; A.back(); }
   }
 
+  var STAT_KEYS = ["str", "agi", "int", "vit"];
+  var STAT_LABELS = ["STR", "AGI", "INT", "VIT"];
+
   function trainInput(btn) {
     var t = ui.train;
-    if (btn === "C") { ui.mode = "idle"; A.back(); return; }
+    if (t.phase === "pick") {
+      if (btn === "A") { t.statSel = (t.statSel + 1) % 4; A.move(); }
+      else if (btn === "B") { t.phase = "aim"; t.marker = 0; t.dir = 1; A.select(); }
+      else if (btn === "C") { ui.mode = "idle"; A.back(); }
+      return;
+    }
+    // aim / result
+    if (btn === "C") { t.phase = "pick"; A.back(); return; }
     if (btn === "B" && t.phase === "aim") {
       // success when the marker is near the centre of the bar
-      var center = 0.5, dist = Math.abs(t.marker - center);
-      var success = dist < 0.13;
-      var res = G.train(success);
-      spawnFloats(res.changes, 10, 12);
+      var success = Math.abs(t.marker - 0.5) < 0.13;
+      var res = G.train(success, STAT_KEYS[t.statSel]);
+      spawnFloats(res.changes, 10, 11);
       t.result = success; t.phase = "result"; t.resultT = 0;
       if (success) A.happy(); else A.refuse();
     }
   }
 
   function statusInput(btn) {
-    if (btn === "A") { ui.status.page = (ui.status.page + 1) % 3; A.move(); }
+    if (btn === "A") { ui.status.page = (ui.status.page + 1) % 4; A.move(); }
     else if (btn === "C" || btn === "B") { ui.mode = "idle"; A.back(); }
   }
 
@@ -184,29 +195,70 @@
     }
   }
 
+  // Player sprite sits left, opponent right; floats hover above each head.
+  var P_X = 6, O_X = 42, FIGHT_Y = 18, FLOAT_Y = 12;
+
   function startBattle() {
-    var stats = G.battleStats();
-    var opp = DV.battle.pickOpponent(stats.power);
+    var p = G.playerCombatant();
+    var o = G.makeOpponent();
+    var res = DV.battle.simulate(p, o);   // resolved up front; we replay the log
     ui.mode = "battle";
     ui.battle = {
-      phase: "intro", t: 0, stats: stats, opp: opp,
-      charge: 0, marker: 0, dir: 1,
-      result: null, fightT: 0, ballX: 0,
+      phase: "intro", t: 0,
+      p: p, o: o, res: res,
+      idx: -1, evtT: 0, speed: 1,
+      pHP: p.maxHP, oHP: o.maxHP,
+      flashP: 0, flashO: 0,
+      recorded: false, reward: null,
     };
+    A.attack();
+  }
+
+  function startFight(b) { b.phase = "fight"; b.idx = -1; b.evtT = 99; } // 99 => first event next tick
+
+  function playEvent(b, ev) {
+    b.pHP = ev.pHP; b.oHP = ev.oHP;
+    var atkP = ev.actor === "p";
+    var tx = atkP ? O_X + 2 : P_X + 2;     // target's head
+    var ax = atkP ? P_X + 2 : O_X + 2;     // actor's head
+    if (ev.type === "hit" || ev.type === "crit") {
+      spawnFloat((ev.type === "crit" ? "!" : "") + ev.amount, tx, FLOAT_Y);
+      if (atkP) b.flashO = 0.18; else b.flashP = 0.18;
+      A.hit();
+    } else if (ev.type === "miss") {
+      spawnFloat("MISS", tx, FLOAT_Y); A.move();
+    } else if (ev.type === "heal") {
+      spawnFloat("+" + ev.amount, ax, FLOAT_Y); A.happy();
+    } else if (ev.type === "buff") {
+      spawnFloat("DEF+", ax, FLOAT_Y); A.select();
+    }
+  }
+
+  function finishFight(b) {
+    b.phase = "result";
+    if (!b.recorded) {
+      b.recorded = true;
+      b.reward = G.recordBattle(b.res.win);
+      spawnFloats(b.reward.changes, 6, 8);
+      if (b.res.win) A.win(); else A.lose();
+    }
   }
 
   function battleInput(btn) {
     var b = ui.battle;
-    if (btn === "C" && (b.phase === "intro" || b.phase === "result")) { ui.mode = "idle"; A.back(); return; }
-    if (b.phase === "intro" && btn === "B") { b.phase = "charge"; A.select(); return; }
-    if (b.phase === "charge" && btn === "B") {
-      b.charge = b.marker;                 // lock current power
-      b.result = DV.battle.simulate(b.stats, b.opp, b.charge);
-      b.phase = "fight"; b.fightT = 0;
-      A.attack();
+    if (b.phase === "intro") {
+      if (btn === "B") startFight(b);
+      else if (btn === "C") { ui.mode = "idle"; A.back(); }
       return;
     }
-    if (b.phase === "result" && btn === "B") { ui.mode = "idle"; A.back(); }
+    if (b.phase === "fight") {
+      if (btn === "B") { b.speed = b.speed >= 3 ? 1 : b.speed + 1; A.move(); }   // 1x/2x/3x
+      else if (btn === "C") {                                                    // skip to the end
+        b.pHP = b.p.hp; b.oHP = b.o.hp; b.idx = b.res.log.length; finishFight(b);
+      }
+      return;
+    }
+    if (b.phase === "result" && (btn === "B" || btn === "C")) { ui.mode = "idle"; A.back(); }
   }
 
   function overlayInput(btn) {
@@ -263,26 +315,17 @@
 
   function updateBattle(dt) {
     var b = ui.battle;
-    if (b.phase === "intro") { b.t += dt; if (b.t > 1.6) b.phase = "charge"; }
-    else if (b.phase === "charge") {
-      b.marker += b.dir * 1.3 * dt;
-      if (b.marker > 1) { b.marker = 1; b.dir = -1; }
-      if (b.marker < 0) { b.marker = 0; b.dir = 1; }
-    } else if (b.phase === "fight") {
-      var prev = b.fightT;
-      b.fightT += dt;
-      var roundDur = 0.8, total = b.result.rounds.length * roundDur;
-      // play a hit sound as each projectile lands
-      var ri = Math.floor(b.fightT / roundDur);
-      var pri = Math.floor(prev / roundDur);
-      if (ri !== pri && b.result.rounds[pri]) {
-        if (b.result.rounds[pri].playerHit || b.result.rounds[pri].oppHit) A.hit();
-      }
-      if (b.fightT >= total) {
-        b.phase = "result";
-        var rb = G.recordBattle(b.result.win);
-        spawnFloats(rb.changes, 8, 13);
-        if (b.result.win) A.win(); else A.lose();
+    if (b.phase === "intro") { b.t += dt; if (b.t > 1.4) startFight(b); return; }
+    if (b.phase === "fight") {
+      if (b.flashP > 0) b.flashP -= dt;
+      if (b.flashO > 0) b.flashO -= dt;
+      b.evtT += dt * b.speed;
+      var dur = 0.6;
+      if (b.evtT >= dur) {
+        b.evtT = 0;
+        b.idx++;
+        if (b.idx >= b.res.log.length) { finishFight(b); return; }
+        playEvent(b, b.res.log[b.idx]);
       }
     }
   }
@@ -384,73 +427,59 @@
 
   function drawTrain() {
     var t = ui.train;
-    R.textCenter("TRAIN", 1);
-    drawPet(8, 16, false);
-    // dumbbell prop
-    R.sprite(S.icons.train, 30, 22);
+    var st = G.getState();
 
-    // timing bar
+    if (t.phase === "pick") {
+      R.textCenter("TRAIN", 1);
+      for (var i = 0; i < 4; i++) {
+        var yy = 11 + i * 8;
+        if (i === t.statSel) R.text(">", 1, yy);
+        R.text(STAT_LABELS[i] + ":" + st[STAT_KEYS[i]], 7, yy);
+      }
+      R.text("B:GO C:BACK", 1, 43);
+      return;
+    }
+
+    // aim / result
+    R.textCenter("TRAIN " + STAT_LABELS[t.statSel], 1);
+    drawPet(8, 14, false);
+    R.sprite(S.icons.train, 30, 20);
+
     var bx = 6, by = 40, bw = 52;
     R.rect(bx, by, bw, 6);
-    // centre target zone
     var zoneW = Math.round(bw * 0.26), zx = bx + Math.round((bw - zoneW) / 2);
     R.rect(zx, by + 1, zoneW, 4, true);
-    // moving marker
     var mx = bx + 1 + Math.round((bw - 3) * t.marker);
     R.rect(mx, by - 1, 2, 8, true);
 
     if (t.phase === "result") {
-      R.textCenter(t.result ? "GREAT!" : "MISS", 30);
+      R.textCenter(t.result ? STAT_LABELS[t.statSel] + " UP!" : "MISS", 30);
     }
   }
 
   function drawBattle() {
     var b = ui.battle;
     if (b.phase === "intro") {
-      R.textCenter("BATTLE!", 12);
-      R.text(b.stats.name, 2, 24);
-      R.textCenter("VS", 32);
-      R.text(b.opp.name, R.W - R.textWidth(b.opp.name) - 2, 40);
+      R.textCenter("BATTLE!", 9);
+      R.text(b.p.name, 2, 21);
+      R.textCenter("VS", 29);
+      R.text(b.o.name, R.W - R.textWidth(b.o.name) - 2, 37);
+      if (Math.floor(now / 400) % 2 === 0) R.textCenter("B:START", 44);
       return;
     }
-    if (b.phase === "charge") {
-      R.textCenter("CHARGE!", 2);
-      drawPet(8, 16, false);
-      R.sprite(S.creatures[b.opp.sprite], R.W - 24, 16, { flip: true });
-      var bx = 6, by = 40, bw = 52;
-      R.rect(bx, by, bw, 6);
-      var fillW = Math.round((bw - 2) * b.marker);
-      R.rect(bx + 1, by + 1, Math.max(0, fillW), 4, true);
-      return;
-    }
-    // fight / result
-    var px = 8, ox = R.W - 24, y = 18;
-    var roundDur = 0.8;
-    var r = Math.min(b.result.rounds.length - 1, Math.floor(b.fightT / roundDur));
-    var local = (b.fightT - r * roundDur) / roundDur;
-    var round = b.result.rounds[r] || {};
 
-    var flashOpp = false, flashPlayer = false;
-    if (b.phase === "fight") {
-      if (local < 0.5) {
-        var t1 = local / 0.5;
-        R.sprite(S.items.ball, Math.round(px + 12 + (ox - px - 12) * t1), y + 6);
-        if (t1 > 0.85 && round.playerHit) flashOpp = true;
-      } else {
-        var t2 = (local - 0.5) / 0.5;
-        R.sprite(S.items.ball, Math.round(ox - (ox - px - 12) * t2), y + 6);
-        if (t2 > 0.85 && round.oppHit) flashPlayer = true;
-      }
-    }
+    // opponent HP bar (top) + player HP bar (bottom)
+    R.bar(2, 1, 60, b.oHP, b.o.maxHP);
+    R.sprite(S.creatures[b.o.sprite], O_X, FIGHT_Y, { flip: true, invert: b.flashO > 0 });
+    R.sprite(petSprite(), P_X, FIGHT_Y, { flip: false, invert: b.flashP > 0 });
+    R.bar(2, 41, 60, b.pHP, b.p.maxHP);
 
-    R.sprite(petSprite(), px, y, { flip: false, invert: flashPlayer });
-    R.sprite(S.creatures[b.opp.sprite], ox, y, { flip: true, invert: flashOpp });
+    if (b.phase === "fight" && b.speed > 1) R.text("X" + b.speed, 53, 9);
 
     if (b.phase === "result") {
-      R.textCenter(b.result.win ? "YOU WIN!" : "YOU LOSE", 2);
-      R.textCenter(b.result.win ? ":)" : ":(", 40);
-    } else {
-      R.textCenter("FIGHT", 1);
+      R.textCenter(b.res.win ? "WIN!" : "LOSE", 23);
+      if (b.reward && b.reward.leveled) R.textCenter("LV " + b.reward.level + "!", 31);
+      if (Math.floor(now / 400) % 2 === 0) R.textCenter("B:OK", 9);
     }
   }
 
@@ -458,18 +487,26 @@
     var st = G.getState();
     var sp = G.species();
     if (ui.status.page === 0) {
-      R.text(sp.name, 2, 3);
-      R.text(stageLabel(sp.stage), 2, 12);
-      R.text("AGE:" + fmtAge(st.ageSec), 2, 26);
-      R.text("WT:" + Math.round(st.weight), 2, 35);
+      R.text(sp.name, 2, 2);
+      R.text(stageLabel(sp.stage), 2, 11);
+      R.text("LV:" + st.level, 2, 22);
+      R.text("AGE:" + fmtAge(st.ageSec), 2, 31);
     } else if (ui.status.page === 1) {
-      R.text("HUNGER", 2, 3);
-      R.hearts(2, 11, st.hunger, 4);
-      R.text("STRENGTH", 2, 24);
-      R.hearts(2, 32, st.strength, 4);
+      R.text("HUNGER", 2, 2);
+      R.hearts(2, 10, st.hunger, 4);
+      R.text("STAMINA", 2, 23);
+      R.hearts(2, 31, st.strength, 4);
+    } else if (ui.status.page === 2) {
+      // RPG stats, two columns
+      R.text("STR:" + st.str, 2, 3);
+      R.text("AGI:" + st.agi, 34, 3);
+      R.text("INT:" + st.int, 2, 13);
+      R.text("VIT:" + st.vit, 34, 13);
+      R.text("WT:" + Math.round(st.weight), 2, 24);
+      R.text("EXP:" + st.exp, 2, 33);
     } else {
-      R.text("TRAIN:" + st.trainingCount, 2, 3);
-      R.text("WIN:" + st.wins + "/" + st.battles, 2, 13);
+      R.text("WIN:" + st.wins + "/" + st.battles, 2, 3);
+      R.text("TRAIN:" + st.trainingCount, 2, 13);
       R.text("CARE X:" + st.careMistakes, 2, 23);
       R.text(st.sick ? "SICK!" : "HEALTHY", 2, 33);
     }

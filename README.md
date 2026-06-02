@@ -49,10 +49,15 @@ Just like the real device, this is a real-time care sim:
   rest; leaving the light on is a care mistake.
 - **Sickness & injury** — filth, starvation or lost battles can make it ill.
   Use **Heal** (medicine) to cure it. Untreated illness can be fatal.
-- **Training** — the **Train** timing minigame builds battle power but burns
+- **RPG stats** — **STR / AGI / INT / VIT** (plus derived HP & defense), shown
+  on the Status screen. **Train** lets you pick a stat to raise; stats also grow
+  slowly on their own and from winning fights (**EXP → levels**).
+- **Training** — the **Train** timing minigame raises the chosen stat but burns
   weight. Over-training while underfed warps its evolution.
-- **Battle** — line up against a wild Digimon, time your **charge** bar, then
-  attacks fly across the screen. Power = species + training + strength.
+- **Auto-battle** — open **Battle** and the fight resolves itself turn-by-turn
+  (HP bars, skills, damage numbers); just watch. **B** changes speed, **C**
+  skips. Each species has its own **skills** (Pepper Breath, Nova Blast, Terra
+  Force…) scaling off STR/INT, with AGI driving turn order, dodges and crits.
 
 ### Care-based digivolution
 

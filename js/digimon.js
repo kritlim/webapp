@@ -134,6 +134,24 @@ window.DV = window.DV || {};
     };
   });
 
+  // Battle skills per species (ids into DV.skills.POOL).
+  var SKILLS_BY_SPECIES = {
+    egg: [],
+    botamon: ["bubble"],
+    koromon: ["bubble", "tackle"],
+    agumon: ["scratch", "pepper"],
+    gabumon: ["tackle", "bluefire"],
+    greymon: ["bite", "novablst", "guard"],
+    garurumon: ["bite", "howling", "guard"],
+    numemon: ["slime", "tackle", "refresh"],
+    metalgreymon: ["novablst", "gigablst", "guard"],
+    skullgreymon: ["darkshot", "bite"],
+    wargreymon: ["novablst", "terra", "guard"],
+  };
+  Object.keys(SKILLS_BY_SPECIES).forEach(function (id) {
+    if (SPECIES[id]) SPECIES[id].skills = SKILLS_BY_SPECIES[id];
+  });
+
   var OPPONENTS = [
     { id: "agumon", name: "AGUMON", sprite: "agumon", power: 5 },
     { id: "gabumon", name: "GABUMON", sprite: "gabumon", power: 6 },
