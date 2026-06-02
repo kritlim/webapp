@@ -49,8 +49,8 @@ window.DV = window.DV || {};
     var atk = sk.kind === "mag" ? actor.matk : actor.patk;
     var defv = sk.kind === "mag" ? Math.floor(target.def / 2) : target.def;
 
-    // accuracy & evasion (AGI difference helps the faster fighter)
-    var hitChance = clamp(sk.acc + (actor.agi - target.agi) * 2, 45, 99);
+    // accuracy & evasion: AGI helps you hit & dodge; INT sharpens your aim
+    var hitChance = clamp(sk.acc + (actor.agi - target.agi) * 2 + Math.floor((actor.int || 0) / 5), 45, 99);
     if (Math.random() * 100 > hitChance) return { skill: sk.name, type: "miss", amount: 0 };
 
     var base = Math.max(1, sk.power + atk - defv);

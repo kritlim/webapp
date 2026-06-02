@@ -402,7 +402,7 @@ window.DV = window.DV || {};
       maxHP: d.maxHP, hp: d.maxHP,
       patk: Math.max(1, Math.round(d.patk * penalty)),
       matk: Math.max(1, Math.round(d.matk * penalty)),
-      def: d.def, agi: d.agi,
+      def: d.def, agi: d.agi, int: int,
       skills: DV.skills.list(ids),
     };
   }

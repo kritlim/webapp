@@ -103,7 +103,7 @@ scenes.push(["STAT POPUPS",snapshot()]);
 
 /* Scene 5: gallery of every creature */
 R.begin();
-const order=["egg","botamon","koromon","agumon","gabumon","greymon","garurumon","numemon","metalgreymon","skullgreymon","wargreymon","veemon","exveemon","aerovdramon","ulforce"];
+const order=["egg","botamon","koromon","agumon","gabumon","greymon","garurumon","numemon","metalgreymon","skullgreymon","wargreymon","veemon","exveemon","aerovdramon","ulforce","patamon","angemon","magnaangemon","seraphimon"];
 // fit 3 across, but 64 wide only fits 3x16=48; do 3 per row, 4 rows -> overflow H.
 // Instead show first 3 here; full gallery handled by direct scaling below.
 scenes.push(["(gallery below)",null]);

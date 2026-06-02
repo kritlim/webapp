@@ -32,6 +32,12 @@ window.DV = window.DV || {};
     wingcut:  { name: "WINGCUT",  kind: "phys", power: 11, acc: 92 },
     vnova:    { name: "VNOVA",    kind: "phys", power: 22, acc: 86 },    // AeroVeedramon: V-Wing Blade
     ulray:    { name: "ULFORCE",  kind: "phys", power: 32, acc: 90 },    // UlforceVeedramon: Ray of Victory
+    // Patamon holy line (INT)
+    boombub:  { name: "BOOMBUB",  kind: "mag",  power: 5,  acc: 92 },    // Patamon: Boom Bubble
+    healaura: { name: "HEALAURA", kind: "heal", power: 14, acc: 100 },
+    handfate: { name: "HANDFATE", kind: "mag",  power: 14, acc: 90 },    // Angemon: Hand of Fate
+    gatedest: { name: "GATEDEST", kind: "mag",  power: 24, acc: 88 },    // MagnaAngemon: Gate of Destiny
+    sevenhv:  { name: "SEVENHVN", kind: "mag",  power: 34, acc: 88 },    // Seraphimon: Seven Heavens
   };
 
   // attach id onto each entry for convenience

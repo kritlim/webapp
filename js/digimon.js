@@ -50,6 +50,8 @@ window.DV = window.DV || {};
       id: "koromon", name: "KOROMON", stage: "intraining", sprite: "koromon",
       power: 2, evolveAfter: 150,
       evolutions: [
+        { to: "patamon", text: "INT is its highest stat & Care Mistakes ≤ 5",
+          cond: function (m, s) { return m.cm <= 5 && s.int > s.str && s.int > s.agi; } },
         { to: "veemon", text: "AGI is its highest stat & Care Mistakes ≤ 5",
           cond: function (m, s) { return m.cm <= 5 && s.agi > s.str && s.agi > s.int; } },
         { to: "agumon", text: "Care Mistakes ≤ 4", cond: function (m) { return m.cm <= 4; } },
@@ -151,6 +153,36 @@ window.DV = window.DV || {};
       power: 40, evolveAfter: null, lifespan: 1500,
       evolutions: [],
     },
+
+    // ---- Patamon holy line (INT-gated), branched from Koromon via INT ----
+    patamon: {
+      id: "patamon", name: "PATAMON", stage: "rookie", sprite: "patamon",
+      power: 5, evolveAfter: 260,
+      evolutions: [
+        { to: "angemon", text: "INT ≥ 5 & Care Mistakes ≤ 6",
+          cond: function (m, s) { return m.cm <= 6 && s.int >= 5; } },
+        { to: "numemon", text: "Otherwise (low INT or poor care)" },
+      ],
+    },
+    angemon: {
+      id: "angemon", name: "ANGEMON", stage: "champion", sprite: "angemon",
+      power: 13, evolveAfter: 360,
+      evolutions: [
+        { to: "magnaangemon", text: "INT ≥ 10, Care Mistakes ≤ 8, Win rate ≥ 40%",
+          cond: function (m, s) { return m.cm <= 8 && s.int >= 10 && m.wr >= 0.4; } },
+        { to: "skullgreymon", text: "Faith falters (low INT or weak record)" },
+      ],
+    },
+    magnaangemon: {
+      id: "magnaangemon", name: "MAGNAANGEMON", stage: "ultimate", sprite: "magnaangemon",
+      power: 24, evolveAfter: 480,
+      evolutions: [{ to: "seraphimon", text: "Survive as an Ultimate" }],
+    },
+    seraphimon: {
+      id: "seraphimon", name: "SERAPHIMON", stage: "mega", sprite: "seraphimon",
+      power: 40, evolveAfter: null, lifespan: 1500,
+      evolutions: [],
+    },
   };
 
   // Attach a generic next() driven by the evolutions data.
@@ -183,6 +215,10 @@ window.DV = window.DV || {};
     exveemon: ["bite", "veelaser", "guard"],
     aerovdramon: ["wingcut", "vnova", "guard"],
     ulforce: ["ulray", "wingcut", "guard"],
+    patamon: ["boombub", "tackle"],
+    angemon: ["handfate", "healaura", "guard"],
+    magnaangemon: ["gatedest", "healaura", "guard"],
+    seraphimon: ["sevenhv", "healaura", "guard"],
   };
   Object.keys(SKILLS_BY_SPECIES).forEach(function (id) {
     if (SPECIES[id]) SPECIES[id].skills = SKILLS_BY_SPECIES[id];
@@ -201,15 +237,19 @@ window.DV = window.DV || {};
     { id: "exveemon", name: "EXVEEMON", sprite: "exveemon", power: 13 },
     { id: "aerovdramon", name: "AEROVDRAMON", sprite: "aerovdramon", power: 24 },
     { id: "ulforce", name: "ULFORCEVMON", sprite: "ulforce", power: 40 },
+    { id: "patamon", name: "PATAMON", sprite: "patamon", power: 5 },
+    { id: "angemon", name: "ANGEMON", sprite: "angemon", power: 13 },
+    { id: "magnaangemon", name: "MAGNAANGEMON", sprite: "magnaangemon", power: 24 },
+    { id: "seraphimon", name: "SERAPHIMON", sprite: "seraphimon", power: 40 },
   ];
 
   // Display order for the Field Guide (stage order, branches grouped).
   var GUIDE_ORDER = [
     "egg", "botamon", "koromon",
-    "agumon", "gabumon", "veemon",
-    "greymon", "garurumon", "exveemon", "numemon",
-    "metalgreymon", "aerovdramon", "skullgreymon",
-    "wargreymon", "ulforce",
+    "agumon", "gabumon", "veemon", "patamon",
+    "greymon", "garurumon", "exveemon", "angemon", "numemon",
+    "metalgreymon", "aerovdramon", "magnaangemon", "skullgreymon",
+    "wargreymon", "ulforce", "seraphimon",
   ];
 
   DV.digimon = {
