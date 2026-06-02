@@ -253,11 +253,11 @@ window.DV = window.DV || {};
       // Overfeeding: piles on weight, may upset its stomach.
       state.weight += CONFIG.WEIGHT_FOOD;
       if (Math.random() < CONFIG.OVERFEED_SICK_CHANCE) { state.sick = true; state.tSick = 0; emit("sick"); }
-      return { ok: true, full: true };
+      return { ok: true, full: true, changes: [["WT", CONFIG.WEIGHT_FOOD]] };
     }
     state.hunger = clamp(state.hunger + 1, 0, CONFIG.MAX_HEARTS);
     state.weight += CONFIG.WEIGHT_FOOD;
-    return { ok: true };
+    return { ok: true, changes: [["HUNGER", 1], ["WT", CONFIG.WEIGHT_FOOD]] };
   }
 
   function feedProtein() {
@@ -266,24 +266,27 @@ window.DV = window.DV || {};
     if (state.strength >= CONFIG.MAX_HEARTS) {
       state.weight += CONFIG.WEIGHT_PROTEIN;
       if (Math.random() < CONFIG.OVERFEED_SICK_CHANCE) { state.sick = true; state.tSick = 0; emit("sick"); }
-      return { ok: true, full: true };
+      return { ok: true, full: true, changes: [["WT", CONFIG.WEIGHT_PROTEIN]] };
     }
     state.strength = clamp(state.strength + 1, 0, CONFIG.MAX_HEARTS);
     state.weight += CONFIG.WEIGHT_PROTEIN;
-    return { ok: true };
+    return { ok: true, changes: [["STR", 1], ["WT", CONFIG.WEIGHT_PROTEIN]] };
   }
 
   function train(success) {
     if (!requireAlive()) return { ok: false };
     if (state.sleeping) return { ok: false, reason: "asleep" };
+    var changes = [], w0 = state.weight;
     if (success) {
       state.trainingCount++;
       state.weight = clamp(state.weight + CONFIG.WEIGHT_TRAIN, CONFIG.WEIGHT_MIN, 99);
+      changes.push(["PWR", 1]);
     } else {
       // even a failed rep burns a little energy
       state.weight = clamp(state.weight - 1, CONFIG.WEIGHT_MIN, 99);
     }
-    return { ok: true };
+    if (state.weight - w0 !== 0) changes.push(["WT", state.weight - w0]);
+    return { ok: true, changes: changes };
   }
 
   function clean() {
@@ -314,16 +317,21 @@ window.DV = window.DV || {};
 
   function recordBattle(won) {
     state.battles++;
+    var s0 = state.strength, w0 = state.weight, injured = false;
     if (won) {
       state.wins++;
     } else {
       // a loss drains strength and may leave a scratch
       state.strength = clamp(state.strength - 1, 0, CONFIG.MAX_HEARTS);
-      if (Math.random() < 0.25) state.injured = true;
+      if (Math.random() < 0.25) { state.injured = true; injured = true; }
     }
     // battling always costs a little strength & weight
     state.strength = clamp(state.strength - 1, 0, CONFIG.MAX_HEARTS);
     state.weight = clamp(state.weight - 1, CONFIG.WEIGHT_MIN, 99);
+    var changes = [];
+    if (state.strength - s0 !== 0) changes.push(["STR", state.strength - s0]);
+    if (state.weight - w0 !== 0) changes.push(["WT", state.weight - w0]);
+    return { won: won, changes: changes, injured: injured };
   }
 
   function battleStats() {

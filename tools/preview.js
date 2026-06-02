@@ -75,6 +75,15 @@ R.sprite(S.items.star,12,14); R.sprite(S.items.star,44,16);
 R.textCenter("WARGREYMON",40);
 scenes.push(["DIGIVOLVE",snapshot()]);
 
+/* Scene 4b: floating stat popups */
+R.begin();
+R.textCenter("FEED",1);
+R.sprite(S.creatures.agumon,6,18);
+R.sprite(S.items.meat,40,20);
+R.text("HUNGER +1",8,13);
+R.text("WT +2",8,6);
+scenes.push(["STAT POPUPS",snapshot()]);
+
 /* Scene 5: gallery of every creature */
 R.begin();
 const order=["egg","botamon","koromon","agumon","gabumon","greymon","garurumon","numemon","metalgreymon","skullgreymon","wargreymon"];

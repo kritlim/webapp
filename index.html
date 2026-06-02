@@ -35,6 +35,17 @@
     Hold <strong>C</strong> for a few seconds to open Settings &amp; reset.
   </div>
 
+  <!-- Field Guide (wiki): toggle button + slide-in drawer -->
+  <button id="wiki-toggle" class="wiki-fab" aria-label="Open Field Guide">📖 Field Guide</button>
+
+  <aside id="wiki" class="wiki" aria-hidden="true">
+    <header class="wiki-head">
+      <h2>📖 Field Guide</h2>
+      <button id="wiki-close" class="wiki-x" aria-label="Close Field Guide">✕</button>
+    </header>
+    <div id="wiki-body" class="wiki-body"><!-- built by wiki.js --></div>
+  </aside>
+
   <!-- Game scripts (plain globals on window.DV, loaded in order) -->
   <script src="js/sprites.js"></script>
   <script src="js/audio.js"></script>
@@ -43,5 +54,6 @@
   <script src="js/battle.js"></script>
   <script src="js/render.js"></script>
   <script src="js/main.js"></script>
+  <script src="js/wiki.js"></script>
 </body>
 </html>
