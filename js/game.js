@@ -1,0 +1,409 @@
+/* ====================================================================
+   game.js — the simulation: care meters, day/night, sickness, ageing,
+   digivolution and death. Runs in real time and also "catches up" the
+   pet's life while the tab was closed (saved in localStorage).
+   ==================================================================== */
+window.DV = window.DV || {};
+(function (DV) {
+  "use strict";
+
+  var SAVE_KEY = "digivice-d3-save-v1";
+
+  // All durations are in seconds. Tuned so a full life to Mega takes a
+  // bit under half an hour of attentive play, but neglect bites quickly.
+  var CONFIG = {
+    MAX_HEARTS: 4,
+    MAX_POOP: 4,
+    HUNGER_DECAY: 50,
+    STRENGTH_DECAY: 65,
+    POOP_MIN: 35,
+    POOP_MAX: 80,
+    CARE_GRACE: 30,
+    POOP_GRACE: 45,
+    SICK_FROM_POOP: 3,
+    SICK_DECAY_MULT: 1.8,
+    DAY_LENGTH: 300,
+    NIGHT_START: 0.78,
+    NEGLECT_DEATH: 240,
+    SICK_DEATH: 320,
+    WEIGHT_MIN: 5,
+    WEIGHT_START: 10,
+    WEIGHT_FOOD: 2,
+    WEIGHT_PROTEIN: 1,
+    WEIGHT_TRAIN: -2,
+    OVERFEED_SICK_CHANCE: 0.15,
+    TERMINAL_LIFESPAN: 1200,
+    OFFLINE_CAP: 8 * 3600, // never simulate more than 8h of absence
+  };
+
+  var listeners = {};
+  function on(evt, cb) { (listeners[evt] = listeners[evt] || []).push(cb); }
+  function emit(evt, a, b) {
+    (listeners[evt] || []).forEach(function (cb) { cb(a, b); });
+  }
+
+  var state = null;
+
+  function rand(min, max) { return min + Math.random() * (max - min); }
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  function newState() {
+    var now = Date.now();
+    return {
+      version: 1,
+      speciesId: DV.digimon.FIRST,
+      bornAt: now,
+      ageSec: 0,
+      stageSec: 0,
+      hunger: CONFIG.MAX_HEARTS,
+      strength: CONFIG.MAX_HEARTS,
+      weight: CONFIG.WEIGHT_START,
+      poop: 0,
+      sick: false,
+      injured: false,
+      sleeping: false,
+      lightsOn: true,
+      careMistakes: 0,
+      trainingCount: 0,
+      wins: 0,
+      battles: 0,
+      soundOn: true,
+      // internal accumulators
+      tHunger: 0, tStrength: 0, tPoop: 0, nextPoop: rand(CONFIG.POOP_MIN, CONFIG.POOP_MAX),
+      tHungryEmpty: 0, tStrengthEmpty: 0, tPoopWait: 0, tNightLit: 0,
+      tNeglect: 0, tSick: 0,
+      dead: false, deathReason: null,
+      lastUpdate: now,
+    };
+  }
+
+  function species() { return DV.digimon.get(state.speciesId); }
+
+  function isNight() {
+    var phase = (state.ageSec % CONFIG.DAY_LENGTH) / CONFIG.DAY_LENGTH;
+    return phase >= CONFIG.NIGHT_START;
+  }
+
+  function needsAttention() {
+    if (!state || state.dead) return false;
+    if (state.speciesId === "egg") return state.stageSec >= species().evolveAfter;
+    return (
+      state.hunger === 0 ||
+      state.strength === 0 ||
+      state.poop > 0 ||
+      state.sick ||
+      state.injured ||
+      (isNight() && state.lightsOn)
+    );
+  }
+
+  // ---- the per-tick simulation (dt seconds, small steps) -------------
+  function step(dt) {
+    if (state.dead) return;
+    state.ageSec += dt;
+    state.stageSec += dt;
+
+    var sp = species();
+    var night = isNight();
+
+    // EGG: nothing decays; it just waits to hatch.
+    if (state.speciesId === "egg") {
+      maybeEvolve(sp);
+      return;
+    }
+
+    var asleep = night && !state.lightsOn;
+    state.sleeping = asleep;
+
+    var decayMult = state.sick ? CONFIG.SICK_DECAY_MULT : 1;
+
+    if (asleep) {
+      // Resting: slowly recover strength, hunger barely moves.
+      state.tStrength -= dt * 0.5;
+      if (state.tStrength < -CONFIG.STRENGTH_DECAY) {
+        state.strength = clamp(state.strength + 1, 0, CONFIG.MAX_HEARTS);
+        state.tStrength = 0;
+      }
+      state.tHunger += dt * 0.3;
+    } else {
+      state.tHunger += dt * decayMult;
+      state.tStrength += dt * decayMult;
+    }
+
+    while (state.tHunger >= CONFIG.HUNGER_DECAY && state.hunger > 0) {
+      state.hunger--; state.tHunger -= CONFIG.HUNGER_DECAY;
+    }
+    while (state.tStrength >= CONFIG.STRENGTH_DECAY && state.strength > 0) {
+      state.strength--; state.tStrength -= CONFIG.STRENGTH_DECAY;
+    }
+
+    // Pooping (not while asleep).
+    if (!asleep) {
+      state.tPoop += dt;
+      if (state.tPoop >= state.nextPoop && state.poop < CONFIG.MAX_POOP) {
+        state.poop++;
+        state.tPoop = 0;
+        state.nextPoop = rand(CONFIG.POOP_MIN, CONFIG.POOP_MAX);
+        emit("poop");
+      }
+    }
+
+    accrueCareMistakes(dt, night);
+    rollSickness(dt);
+    checkDeath(dt);
+    maybeEvolve(sp);
+  }
+
+  function bumpMistake() {
+    state.careMistakes++;
+    emit("alert");
+  }
+
+  function accrueCareMistakes(dt, night) {
+    // Hunger left empty.
+    if (state.hunger === 0) {
+      state.tHungryEmpty += dt;
+      if (state.tHungryEmpty >= CONFIG.CARE_GRACE) { bumpMistake(); state.tHungryEmpty -= CONFIG.CARE_GRACE; }
+    } else state.tHungryEmpty = 0;
+
+    // Strength left empty.
+    if (state.strength === 0) {
+      state.tStrengthEmpty += dt;
+      if (state.tStrengthEmpty >= CONFIG.CARE_GRACE) { bumpMistake(); state.tStrengthEmpty -= CONFIG.CARE_GRACE; }
+    } else state.tStrengthEmpty = 0;
+
+    // Poop left uncleaned.
+    if (state.poop > 0) {
+      state.tPoopWait += dt;
+      if (state.tPoopWait >= CONFIG.POOP_GRACE) { bumpMistake(); state.tPoopWait -= CONFIG.POOP_GRACE; }
+    } else state.tPoopWait = 0;
+
+    // Lights on while it wants to sleep.
+    if (night && state.lightsOn) {
+      state.tNightLit += dt;
+      if (state.tNightLit >= CONFIG.CARE_GRACE) { bumpMistake(); state.tNightLit -= CONFIG.CARE_GRACE; }
+    } else state.tNightLit = 0;
+  }
+
+  function rollSickness(dt) {
+    if (state.sick) { state.tSick += dt; return; }
+    // Filth or starvation can make it ill.
+    var risk = 0;
+    if (state.poop >= CONFIG.SICK_FROM_POOP) risk += 0.02 * dt;
+    if (state.hunger === 0 && state.strength === 0) risk += 0.03 * dt;
+    if (risk > 0 && Math.random() < risk) {
+      state.sick = true;
+      state.tSick = 0;
+      emit("sick");
+    }
+  }
+
+  function checkDeath(dt) {
+    // Total neglect: both meters bottomed out for too long.
+    if (state.hunger === 0 && state.strength === 0) {
+      state.tNeglect += dt;
+      if (state.tNeglect >= CONFIG.NEGLECT_DEATH) return die("neglect");
+    } else state.tNeglect = 0;
+
+    // Illness left untreated.
+    if (state.sick && state.tSick >= CONFIG.SICK_DEATH) return die("illness");
+
+    // Old age (terminal forms / stuck SkullGreymon).
+    var sp = species();
+    var stuck = sp.next(state) === null && sp.evolveAfter !== null
+      ? state.stageSec >= (sp.lifespan || CONFIG.TERMINAL_LIFESPAN)
+      : false;
+    var aged = sp.evolveAfter === null && state.stageSec >= (sp.lifespan || CONFIG.TERMINAL_LIFESPAN);
+    if (stuck || aged) return die("oldage");
+  }
+
+  function die(reason) {
+    state.dead = true;
+    state.deathReason = reason;
+    state.sleeping = false;
+    emit("death", reason);
+  }
+
+  function maybeEvolve(sp) {
+    if (sp.evolveAfter === null) return;
+    if (state.stageSec < sp.evolveAfter) return;
+    var nextId = sp.next(state);
+    if (!nextId) return; // eligible but branch says "stay" (e.g. wild SkullGreymon)
+    var from = state.speciesId;
+    state.speciesId = nextId;
+    state.stageSec = 0;
+    // Celebrate: top up, cure, settle weight toward a healthy baseline.
+    state.hunger = CONFIG.MAX_HEARTS;
+    state.strength = CONFIG.MAX_HEARTS;
+    state.sick = false;
+    state.injured = false;
+    state.tSick = 0;
+    state.poop = 0;
+    state.weight = clamp(state.weight, CONFIG.WEIGHT_MIN, 35);
+    emit(from === "egg" ? "hatch" : "evolve", from, nextId);
+  }
+
+  // ---- public actions ------------------------------------------------
+  function requireAlive() { return state && !state.dead && state.speciesId !== "egg"; }
+
+  function feedFood() {
+    if (!requireAlive()) return { ok: false };
+    if (state.sleeping) return { ok: false, reason: "asleep" };
+    if (state.hunger >= CONFIG.MAX_HEARTS) {
+      // Overfeeding: piles on weight, may upset its stomach.
+      state.weight += CONFIG.WEIGHT_FOOD;
+      if (Math.random() < CONFIG.OVERFEED_SICK_CHANCE) { state.sick = true; state.tSick = 0; emit("sick"); }
+      return { ok: true, full: true };
+    }
+    state.hunger = clamp(state.hunger + 1, 0, CONFIG.MAX_HEARTS);
+    state.weight += CONFIG.WEIGHT_FOOD;
+    return { ok: true };
+  }
+
+  function feedProtein() {
+    if (!requireAlive()) return { ok: false };
+    if (state.sleeping) return { ok: false, reason: "asleep" };
+    if (state.strength >= CONFIG.MAX_HEARTS) {
+      state.weight += CONFIG.WEIGHT_PROTEIN;
+      if (Math.random() < CONFIG.OVERFEED_SICK_CHANCE) { state.sick = true; state.tSick = 0; emit("sick"); }
+      return { ok: true, full: true };
+    }
+    state.strength = clamp(state.strength + 1, 0, CONFIG.MAX_HEARTS);
+    state.weight += CONFIG.WEIGHT_PROTEIN;
+    return { ok: true };
+  }
+
+  function train(success) {
+    if (!requireAlive()) return { ok: false };
+    if (state.sleeping) return { ok: false, reason: "asleep" };
+    if (success) {
+      state.trainingCount++;
+      state.weight = clamp(state.weight + CONFIG.WEIGHT_TRAIN, CONFIG.WEIGHT_MIN, 99);
+    } else {
+      // even a failed rep burns a little energy
+      state.weight = clamp(state.weight - 1, CONFIG.WEIGHT_MIN, 99);
+    }
+    return { ok: true };
+  }
+
+  function clean() {
+    if (!state || state.dead) return { ok: false };
+    var had = state.poop;
+    state.poop = 0;
+    state.tPoopWait = 0;
+    return { ok: true, cleaned: had };
+  }
+
+  function heal() {
+    if (!state || state.dead) return { ok: false };
+    if (state.sick || state.injured) {
+      state.sick = false;
+      state.injured = false;
+      state.tSick = 0;
+      emit("cured");
+      return { ok: true, cured: true };
+    }
+    return { ok: true, cured: false };
+  }
+
+  function toggleLights() {
+    if (!state || state.dead) return state ? state.lightsOn : false;
+    state.lightsOn = !state.lightsOn;
+    return state.lightsOn;
+  }
+
+  function recordBattle(won) {
+    state.battles++;
+    if (won) {
+      state.wins++;
+    } else {
+      // a loss drains strength and may leave a scratch
+      state.strength = clamp(state.strength - 1, 0, CONFIG.MAX_HEARTS);
+      if (Math.random() < 0.25) state.injured = true;
+    }
+    // battling always costs a little strength & weight
+    state.strength = clamp(state.strength - 1, 0, CONFIG.MAX_HEARTS);
+    state.weight = clamp(state.weight - 1, CONFIG.WEIGHT_MIN, 99);
+  }
+
+  function battleStats() {
+    var sp = species();
+    var trainBonus = Math.floor(state.trainingCount / 2);
+    var hungerPenalty = state.hunger === 0 ? 3 : 0;
+    var sickPenalty = state.sick ? 4 : 0;
+    var power = sp.power + trainBonus + state.strength - hungerPenalty - sickPenalty;
+    return { power: Math.max(1, power), sprite: sp.sprite, name: sp.name };
+  }
+
+  // ---- persistence + main loop driver --------------------------------
+  function save() {
+    if (!state) return;
+    state.lastUpdate = Date.now();
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch (e) {}
+  }
+
+  function load() {
+    try {
+      var raw = localStorage.getItem(SAVE_KEY);
+      if (!raw) return false;
+      var s = JSON.parse(raw);
+      if (!s || !s.speciesId || !DV.digimon.get(s.speciesId)) return false;
+      state = s;
+      DV.audio.setEnabled(state.soundOn !== false);
+      catchUp();
+      return true;
+    } catch (e) { return false; }
+  }
+
+  function start() {
+    state = newState();
+    save();
+  }
+
+  // Simulate the elapsed real-world time since the last save in 5s chunks.
+  function catchUp() {
+    var now = Date.now();
+    var elapsed = Math.min((now - (state.lastUpdate || now)) / 1000, CONFIG.OFFLINE_CAP);
+    var stepSize = 5;
+    while (elapsed > 0 && !state.dead) {
+      step(Math.min(stepSize, elapsed));
+      elapsed -= stepSize;
+    }
+    state.lastUpdate = now;
+  }
+
+  // advance(dtSeconds): called by the render loop with real frame deltas.
+  function advance(dt) {
+    if (!state) return;
+    // guard against huge deltas (tab throttling) by sub-stepping
+    var remaining = Math.min(dt, 30);
+    while (remaining > 0) {
+      step(Math.min(1, remaining));
+      remaining -= 1;
+    }
+  }
+
+  DV.game = {
+    CONFIG: CONFIG,
+    on: on,
+    start: start,
+    load: load,
+    save: save,
+    advance: advance,
+    sync: catchUp,
+    getState: function () { return state; },
+    species: species,
+    isNight: isNight,
+    needsAttention: needsAttention,
+    // actions
+    feedFood: feedFood,
+    feedProtein: feedProtein,
+    train: train,
+    clean: clean,
+    heal: heal,
+    toggleLights: toggleLights,
+    recordBattle: recordBattle,
+    battleStats: battleStats,
+    setSound: function (v) { if (state) state.soundOn = v; DV.audio.setEnabled(v); },
+  };
+})(window.DV);

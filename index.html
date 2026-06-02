@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#161c2b" />
+  <title>Digivice D-3 — Virtual Pet</title>
+  <meta name="description" content="A Digimon Digivice D-3 style virtual pet & battle game. Raise, train, and digivolve your Digimon right in your browser." />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><rect width='16' height='16' rx='4' fill='%231f6fd6'/><circle cx='8' cy='7' r='4' fill='%23aeba8c'/></svg>" />
+</head>
+<body>
+  <h1>DIGIVICE&nbsp;<span>D-3</span></h1>
+
+  <div class="device" id="device">
+    <div class="bezel">
+      <div class="screen-frame">
+        <!-- Logical resolution is set in render.js; CSS scales it up crisply -->
+        <canvas id="lcd" width="64" height="48" aria-label="Digivice screen"></canvas>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="btn" id="btn-a" aria-label="A button">A<small>SELECT</small></button>
+      <button class="btn center" id="btn-b" aria-label="B button">B<small>ENTER</small></button>
+      <button class="btn" id="btn-c" aria-label="C button">C<small>BACK</small></button>
+    </div>
+
+    <div class="brand">DIGITAL MONSTER</div>
+  </div>
+
+  <div class="hints">
+    <strong>A</strong> move&nbsp;·&nbsp;<strong>B</strong> select&nbsp;·&nbsp;<strong>C</strong> back<br />
+    Keyboard: <kbd>←</kbd>/<kbd>A</kbd> &nbsp; <kbd>Enter</kbd>/<kbd>Space</kbd> &nbsp; <kbd>Esc</kbd>/<kbd>C</kbd><br />
+    Hold <strong>C</strong> for a few seconds to open Settings &amp; reset.
+  </div>
+
+  <!-- Game scripts (plain globals on window.DV, loaded in order) -->
+  <script src="js/sprites.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/digimon.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/battle.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
