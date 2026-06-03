@@ -59,13 +59,30 @@ R.text("AGUMON",2,3); R.text("ROOKIE",2,12);
 R.text("HUNGER",2,22); R.hearts(2,30,3,4);
 scenes.push(["STATUS",snapshot()]);
 
-/* Scene 3: battle */
+/* Scene 3: auto-battle (HP bars + damage number) */
 R.begin();
-R.textCenter("FIGHT",1);
-R.sprite(S.creatures.greymon,8,18);
-R.sprite(S.creatures.metalgreymon,R.W-24,18,{flip:true});
-R.sprite(S.items.ball,30,24);
-scenes.push(["BATTLE",snapshot()]);
+R.bar(2,1,60,18,40);                 // opponent HP bar (top)
+R.sprite(S.creatures.greymon,6,18);
+R.sprite(S.creatures.metalgreymon,42,18,{flip:true});
+R.bar(2,41,60,33,46);                // player HP bar (bottom)
+R.text("14",46,12);                  // damage float over opponent
+scenes.push(["AUTO-BATTLE",snapshot()]);
+
+/* Scene 3b: train stat picker */
+R.begin();
+R.textCenter("TRAIN",1);
+var stt=[["STR",7],["AGI",4],["INT",2],["VIT",5]];
+for(var si=0;si<4;si++){ var yy=11+si*8; if(si===1)R.text(">",1,yy); R.text(stt[si][0]+":"+stt[si][1],7,yy); }
+R.text("B:GO C:BACK",1,43);
+scenes.push(["TRAIN PICK",snapshot()]);
+
+/* Scene 3c: status RPG stats page */
+R.begin();
+R.text("STR:7",2,3); R.text("AGI:4",34,3);
+R.text("INT:2",2,13); R.text("VIT:5",34,13);
+R.text("WT:14",2,24); R.text("EXP:18",2,33);
+R.text("A:NEXT",2,43);
+scenes.push(["STATS PAGE",snapshot()]);
 
 /* Scene 4: digivolve */
 R.begin();
@@ -86,7 +103,7 @@ scenes.push(["STAT POPUPS",snapshot()]);
 
 /* Scene 5: gallery of every creature */
 R.begin();
-const order=["egg","botamon","koromon","agumon","gabumon","greymon","garurumon","numemon","metalgreymon","skullgreymon","wargreymon"];
+const order=["egg","botamon","koromon","agumon","gabumon","greymon","garurumon","numemon","metalgreymon","skullgreymon","wargreymon","veemon","exveemon","aerovdramon","ulforce","patamon","angemon","magnaangemon","seraphimon"];
 // fit 3 across, but 64 wide only fits 3x16=48; do 3 per row, 4 rows -> overflow H.
 // Instead show first 3 here; full gallery handled by direct scaling below.
 scenes.push(["(gallery below)",null]);

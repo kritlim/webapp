@@ -103,6 +103,20 @@
       "<b>Train</b> from the menu to raise battle power, but training burns weight — " +
       "over-training while underfed leads to the “wrong” digivolutions."));
 
+    body.appendChild(el("h3", null, "Stats & battle"));
+    var su = el("ul");
+    [
+      "<b>STR</b> — physical attack power (Tackle, Pepper Breath…)",
+      "<b>INT</b> — magic attack and healing skills",
+      "<b>AGI</b> — turn order, dodging and critical hits",
+      "<b>VIT</b> — max HP and defense",
+    ].forEach(function (x) { su.appendChild(el("li", null, x)); });
+    body.appendChild(su);
+    body.appendChild(el("p", "lead",
+      "Use <b>Train</b> and pick a stat to raise it. Stats also tick up slowly on their own " +
+      "and from winning fights (EXP → levels). <b>Battles are auto-resolved</b> — open Battle and " +
+      "watch your Digimon fight; <b>B</b> changes speed, <b>C</b> skips to the result."));
+
     body.appendChild(el("h3", null, "Evolution chart"));
     D.GUIDE_ORDER.forEach(function (id) {
       var sp = D.get(id);

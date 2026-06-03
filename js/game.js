@@ -34,6 +34,8 @@ window.DV = window.DV || {};
     OVERFEED_SICK_CHANCE: 0.15,
     TERMINAL_LIFESPAN: 1200,
     OFFLINE_CAP: 8 * 3600, // never simulate more than 8h of absence
+    STAT_MAX: 99,
+    STAT_GROW_INTERVAL: 150, // passive idle stat trickle (if well kept)
   };
 
   var listeners = {};
@@ -68,13 +70,24 @@ window.DV = window.DV || {};
       wins: 0,
       battles: 0,
       soundOn: true,
+      // RPG stats
+      str: 2, agi: 2, int: 2, vit: 2,
+      level: 1, exp: 0,
       // internal accumulators
       tHunger: 0, tStrength: 0, tPoop: 0, nextPoop: rand(CONFIG.POOP_MIN, CONFIG.POOP_MAX),
       tHungryEmpty: 0, tStrengthEmpty: 0, tPoopWait: 0, tNightLit: 0,
-      tNeglect: 0, tSick: 0,
+      tNeglect: 0, tSick: 0, tStatGrow: 0,
       dead: false, deathReason: null,
       lastUpdate: now,
     };
+  }
+
+  // Back-fill RPG fields onto an older save that predates them.
+  function ensureStats(s) {
+    if (s.str == null) { s.str = 2; s.agi = 2; s.int = 2; s.vit = 2; }
+    if (s.level == null) { s.level = 1; s.exp = 0; }
+    if (s.tStatGrow == null) s.tStatGrow = 0;
+    return s;
   }
 
   function species() { return DV.digimon.get(state.speciesId); }
@@ -150,8 +163,22 @@ window.DV = window.DV || {};
 
     accrueCareMistakes(dt, night);
     rollSickness(dt);
+    passiveGrowth(dt);
     checkDeath(dt);
     maybeEvolve(sp);
+  }
+
+  var STAT_KEYS = ["str", "agi", "int", "vit"];
+
+  // "Both" growth: a slow passive trickle while the pet is well kept.
+  function passiveGrowth(dt) {
+    if (state.sick || state.hunger === 0) { return; } // unhealthy: no gains
+    state.tStatGrow += dt;
+    if (state.tStatGrow >= CONFIG.STAT_GROW_INTERVAL) {
+      state.tStatGrow -= CONFIG.STAT_GROW_INTERVAL;
+      var k = STAT_KEYS[Math.floor(Math.random() * STAT_KEYS.length)];
+      state[k] = Math.min(CONFIG.STAT_MAX, state[k] + 1);
+    }
   }
 
   function bumpMistake() {
@@ -270,17 +297,19 @@ window.DV = window.DV || {};
     }
     state.strength = clamp(state.strength + 1, 0, CONFIG.MAX_HEARTS);
     state.weight += CONFIG.WEIGHT_PROTEIN;
-    return { ok: true, changes: [["STR", 1], ["WT", CONFIG.WEIGHT_PROTEIN]] };
+    return { ok: true, changes: [["STA", 1], ["WT", CONFIG.WEIGHT_PROTEIN]] };
   }
 
-  function train(success) {
+  function train(success, stat) {
     if (!requireAlive()) return { ok: false };
     if (state.sleeping) return { ok: false, reason: "asleep" };
+    if (STAT_KEYS.indexOf(stat) < 0) stat = "str";
     var changes = [], w0 = state.weight;
     if (success) {
       state.trainingCount++;
+      state[stat] = Math.min(CONFIG.STAT_MAX, state[stat] + 1);
       state.weight = clamp(state.weight + CONFIG.WEIGHT_TRAIN, CONFIG.WEIGHT_MIN, 99);
-      changes.push(["PWR", 1]);
+      changes.push([stat.toUpperCase(), 1]);
     } else {
       // even a failed rep burns a little energy
       state.weight = clamp(state.weight - 1, CONFIG.WEIGHT_MIN, 99);
@@ -321,26 +350,79 @@ window.DV = window.DV || {};
     if (won) {
       state.wins++;
     } else {
-      // a loss drains strength and may leave a scratch
+      // a loss drains stamina and may leave a scratch
       state.strength = clamp(state.strength - 1, 0, CONFIG.MAX_HEARTS);
       if (Math.random() < 0.25) { state.injured = true; injured = true; }
     }
-    // battling always costs a little strength & weight
+    // battling always costs a little stamina & weight
     state.strength = clamp(state.strength - 1, 0, CONFIG.MAX_HEARTS);
     state.weight = clamp(state.weight - 1, CONFIG.WEIGHT_MIN, 99);
+
+    // EXP & levels (idle growth from fighting)
+    var idx = DV.digimon.stageIndex(state.speciesId);
+    var gain = won ? 12 + idx * 5 : 4;
+    state.exp += gain;
+    var leveled = 0;
+    var need = function () { return 20 + (state.level - 1) * 15; };
+    while (state.exp >= need()) {
+      state.exp -= need();
+      state.level++;
+      leveled++;
+      // raise the two lowest stats to keep builds rounded
+      var order = STAT_KEYS.slice().sort(function (a, b) { return state[a] - state[b]; });
+      state[order[0]] = Math.min(CONFIG.STAT_MAX, state[order[0]] + 1);
+      state[order[1]] = Math.min(CONFIG.STAT_MAX, state[order[1]] + 1);
+    }
+
     var changes = [];
-    if (state.strength - s0 !== 0) changes.push(["STR", state.strength - s0]);
+    if (state.strength - s0 !== 0) changes.push(["STA", state.strength - s0]);
     if (state.weight - w0 !== 0) changes.push(["WT", state.weight - w0]);
-    return { won: won, changes: changes, injured: injured };
+    changes.push(["EXP", gain]);
+    return { won: won, changes: changes, injured: injured, leveled: leveled, level: state.level };
   }
 
-  function battleStats() {
-    var sp = species();
-    var trainBonus = Math.floor(state.trainingCount / 2);
-    var hungerPenalty = state.hunger === 0 ? 3 : 0;
-    var sickPenalty = state.sick ? 4 : 0;
-    var power = sp.power + trainBonus + state.strength - hungerPenalty - sickPenalty;
-    return { power: Math.max(1, power), sprite: sp.sprite, name: sp.name };
+  // ---- combatant builders for the auto-battle ----
+  function derive(str, agi, int, vit, speciesPower, stageIdx) {
+    return {
+      maxHP: 20 + vit * 4 + stageIdx * 10,
+      patk: str + Math.round(speciesPower * 0.5),
+      matk: int + Math.round(speciesPower * 0.35),
+      def: Math.floor(vit / 2) + Math.floor(stageIdx / 2),
+      agi: agi,
+    };
+  }
+  function combatant(id, str, agi, int, vit, opts) {
+    var sp = DV.digimon.get(id);
+    var idx = DV.digimon.stageIndex(id);
+    var d = derive(str, agi, int, vit, sp.power, idx);
+    var penalty = ((opts && opts.sick) ? 0.8 : 1) * ((opts && opts.hungry) ? 0.85 : 1);
+    var ids = sp.skills && sp.skills.length ? sp.skills : ["tackle"];
+    return {
+      id: id, name: sp.name, sprite: sp.sprite,
+      maxHP: d.maxHP, hp: d.maxHP,
+      patk: Math.max(1, Math.round(d.patk * penalty)),
+      matk: Math.max(1, Math.round(d.matk * penalty)),
+      def: d.def, agi: d.agi, int: int,
+      skills: DV.skills.list(ids),
+    };
+  }
+  function playerCombatant() {
+    return combatant(state.speciesId, state.str, state.agi, state.int, state.vit,
+      { sick: state.sick, hungry: state.hunger === 0 });
+  }
+  function makeOpponent() {
+    var idx = DV.digimon.stageIndex(state.speciesId);
+    // same-stage wilds, plus the player's own species as a guaranteed fair mirror
+    var pool = DV.digimon.OPPONENTS.filter(function (o) { return DV.digimon.stageIndex(o.id) === idx; });
+    pool = pool.concat([{ id: state.speciesId }]);
+    var pick = pool[Math.floor(Math.random() * pool.length)];
+    var avg = (state.str + state.agi + state.int + state.vit) / 4;
+    // wild stats scale around the player's average (0.85x .. 1.10x)
+    var s = function () { return Math.max(1, Math.round(avg * (0.85 + Math.random() * 0.25))); };
+    return combatant(pick.id, s(), s(), s(), s(), {});
+  }
+  function statBlock() {
+    return { str: state.str, agi: state.agi, int: state.int, vit: state.vit, level: state.level, exp: state.exp };
   }
 
   // ---- persistence + main loop driver --------------------------------
@@ -356,7 +438,7 @@ window.DV = window.DV || {};
       if (!raw) return false;
       var s = JSON.parse(raw);
       if (!s || !s.speciesId || !DV.digimon.get(s.speciesId)) return false;
-      state = s;
+      state = ensureStats(s);
       DV.audio.setEnabled(state.soundOn !== false);
       catchUp();
       return true;
@@ -411,7 +493,9 @@ window.DV = window.DV || {};
     heal: heal,
     toggleLights: toggleLights,
     recordBattle: recordBattle,
-    battleStats: battleStats,
+    playerCombatant: playerCombatant,
+    makeOpponent: makeOpponent,
+    statBlock: statBlock,
     setSound: function (v) { if (state) state.soundOn = v; DV.audio.setEnabled(v); },
   };
 })(window.DV);
